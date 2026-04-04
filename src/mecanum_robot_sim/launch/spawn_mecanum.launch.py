@@ -16,7 +16,6 @@ from launch.conditions import IfCondition
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
-
 def generate_launch_description():
     pkg_robot  = get_package_share_directory('mecanum_robot_sim')
     ros_gz_sim = get_package_share_directory('ros_gz_sim')
