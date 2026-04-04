@@ -1,0 +1,286 @@
+<?xml version="1.0"?>
+<!--
+  Mecanum wheel robot URDF
+  Adapted from gz_ros2_control_demos (Apache 2.0)
+  Source: https://github.com/ros-controls/gz_ros2_control
+
+  Sensors on this robot
+  ─────────────────────
+  1. 2-D LiDAR    (lidar_link)   → /scan             360° 12 m range
+  2. Front Camera (camera_link)  → /front_camera/image_raw  640×480 RGB 30 Hz
+  3. IMU          (imu_link)     → /imu              100 Hz, fused pose/vel
+-->
+<robot name="mecanum_robot" xmlns:xacro="http://www.ros.org/wiki/xacro"
+                             xmlns:gz="http://gazebosim.org/schema">
+
+  <material name="orange"><color rgba="0.8 0.4 0.0 1.0"/></material>
+  <material name="black"> <color rgba="0.1 0.1 0.1 1.0"/></material>
+  <material name="white"> <color rgba="0.9 0.9 0.9 1.0"/></material>
+  <material name="grey">  <color rgba="0.5 0.5 0.5 1.0"/></material>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       BASE BODY
+  ═══════════════════════════════════════════════════════════════ -->
+  <link name="base_link">
+    <collision>
+      <origin xyz="0 0 0.1" rpy="0 0 0"/>
+      <geometry><box size="0.8 0.5 0.2"/></geometry>
+    </collision>
+    <visual>
+      <origin xyz="0 0 0.1" rpy="0 0 0"/>
+      <geometry><box size="0.8 0.5 0.2"/></geometry>
+      <material name="orange"/>
+    </visual>
+    <inertial>
+      <origin xyz="0 0 0.1" rpy="0 0 0"/>
+      <mass value="10.0"/>
+      <inertia ixx="0.22" ixy="0.0" ixz="0.0"
+               iyy="0.57" iyz="0.0" izz="0.69"/>
+    </inertial>
+  </link>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       MECANUM WHEELS  (sphere collision + angled friction)
+  ═══════════════════════════════════════════════════════════════ -->
+  <xacro:macro name="wheel" params="name x y">
+    <joint name="${name}_joint" type="continuous">
+      <origin xyz="${x} ${y} 0.12" rpy="${-pi/2} 0 0"/>
+      <parent link="base_link"/>
+      <child link="${name}"/>
+      <axis xyz="0 0 1"/>
+      <dynamics damping="0.2"/>
+    </joint>
+    <link name="${name}">
+      <collision><geometry><sphere radius="0.12"/></geometry></collision>
+      <visual>
+        <geometry><sphere radius="0.12"/></geometry>
+        <material name="black"/>
+      </visual>
+      <inertial>
+        <mass value="1.0"/>
+        <inertia ixx="0.0096" ixy="0.0" ixz="0.0"
+                 iyy="0.0096" iyz="0.0" izz="0.0072"/>
+      </inertial>
+    </link>
+  </xacro:macro>
+
+  <xacro:wheel name="front_left_wheel"  x=" 0.28" y=" 0.22"/>
+  <xacro:wheel name="front_right_wheel" x=" 0.28" y="-0.22"/>
+  <xacro:wheel name="rear_left_wheel"   x="-0.28" y=" 0.22"/>
+  <xacro:wheel name="rear_right_wheel"  x="-0.28" y="-0.22"/>
+
+  <!-- fdir1: FL+RR = (1,-1,0), FR+RL = (1,+1,0) to simulate 45° rollers -->
+  <gazebo reference="front_left_wheel">
+    <collision><surface><friction><ode>
+      <mu>1.0</mu><mu2>0.0</mu2>
+      <fdir1 gz:expressed_in="base_link">1 -1 0</fdir1>
+    </ode></friction></surface></collision>
+  </gazebo>
+  <gazebo reference="front_right_wheel">
+    <collision><surface><friction><ode>
+      <mu>1.0</mu><mu2>0.0</mu2>
+      <fdir1 gz:expressed_in="base_link">1 1 0</fdir1>
+    </ode></friction></surface></collision>
+  </gazebo>
+  <gazebo reference="rear_left_wheel">
+    <collision><surface><friction><ode>
+      <mu>1.0</mu><mu2>0.0</mu2>
+      <fdir1 gz:expressed_in="base_link">1 1 0</fdir1>
+    </ode></friction></surface></collision>
+  </gazebo>
+  <gazebo reference="rear_right_wheel">
+    <collision><surface><friction><ode>
+      <mu>1.0</mu><mu2>0.0</mu2>
+      <fdir1 gz:expressed_in="base_link">1 -1 0</fdir1>
+    </ode></friction></surface></collision>
+  </gazebo>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       SENSOR 1 — 2-D LiDAR
+       Frame : lidar_link  (top of body, centre)
+       Topic : /scan  (bridged from /lidar)
+       Use   : obstacle avoidance, SLAM, human leg detection
+  ═══════════════════════════════════════════════════════════════ -->
+  <link name="lidar_link">
+    <visual>
+      <geometry><cylinder radius="0.05" length="0.04"/></geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <geometry><cylinder radius="0.05" length="0.04"/></geometry>
+    </collision>
+    <inertial>
+      <mass value="0.1"/>
+      <inertia ixx="0.0001" ixy="0" ixz="0"
+               iyy="0.0001" iyz="0" izz="0.0001"/>
+    </inertial>
+  </link>
+
+  <joint name="lidar_joint" type="fixed">
+    <origin xyz="0 0 0.22" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child link="lidar_link"/>
+  </joint>
+
+  <gazebo reference="lidar_link">
+    <sensor name="lidar" type="gpu_lidar">
+      <topic>/lidar</topic>
+      <gz_frame_id>lidar_link</gz_frame_id>
+      <update_rate>10</update_rate>
+      <always_on>true</always_on>
+      <visualize>false</visualize>
+      <lidar>
+        <scan>
+          <horizontal>
+            <samples>360</samples>
+            <resolution>1</resolution>
+            <min_angle>-3.14159265</min_angle>
+            <max_angle>3.14159265</max_angle>
+          </horizontal>
+        </scan>
+        <range><min>0.12</min><max>12.0</max><resolution>0.01</resolution></range>
+        <noise><type>gaussian</type><mean>0.0</mean><stddev>0.01</stddev></noise>
+      </lidar>
+    </sensor>
+  </gazebo>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       SENSOR 2 — FRONT RGB CAMERA
+       Frame : camera_link  (front face of body, slightly elevated)
+       Topics: /front_camera/image_raw  (bridged via ros_gz_image)
+               /front_camera/camera_info
+       Use   : YOLOv8 human detection, visual odometry
+  ═══════════════════════════════════════════════════════════════ -->
+  <link name="camera_link">
+    <visual>
+      <geometry><box size="0.04 0.08 0.04"/></geometry>
+      <material name="grey"/>
+    </visual>
+    <collision>
+      <geometry><box size="0.04 0.08 0.04"/></geometry>
+    </collision>
+    <inertial>
+      <mass value="0.05"/>
+      <inertia ixx="0.00001" ixy="0" ixz="0"
+               iyy="0.00001" iyz="0" izz="0.00001"/>
+    </inertial>
+  </link>
+
+  <!-- mounted at front face (x=+0.40), 0.18 m above base_link origin -->
+  <joint name="camera_joint" type="fixed">
+    <origin xyz="0.40 0 0.18" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child link="camera_link"/>
+  </joint>
+
+  <!-- optical frame: z-forward, x-right, y-down (ROS camera convention) -->
+  <link name="camera_optical_link"/>
+  <joint name="camera_optical_joint" type="fixed">
+    <origin xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
+    <parent link="camera_link"/>
+    <child link="camera_optical_link"/>
+  </joint>
+
+  <gazebo reference="camera_link">
+    <sensor name="front_camera" type="camera">
+      <topic>/front_camera</topic>
+      <gz_frame_id>camera_optical_link</gz_frame_id>
+      <update_rate>30</update_rate>
+      <always_on>true</always_on>
+      <visualize>false</visualize>
+      <camera>
+        <horizontal_fov>1.047</horizontal_fov>     <!-- 60° FOV -->
+        <image>
+          <width>640</width>
+          <height>480</height>
+          <format>R8G8B8</format>
+        </image>
+        <clip><near>0.1</near><far>20.0</far></clip>
+        <noise><type>gaussian</type><mean>0.0</mean><stddev>0.007</stddev></noise>
+      </camera>
+    </sensor>
+  </gazebo>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       SENSOR 3 — IMU
+       Frame : imu_link  (body centre, aligned with base_link)
+       Topic : /imu  (bridged from /imu_raw)
+       Use   : wheel-odometry fusion, tilt detection, state estimation
+  ═══════════════════════════════════════════════════════════════ -->
+  <link name="imu_link">
+    <visual>
+      <geometry><box size="0.02 0.02 0.01"/></geometry>
+      <material name="white"/>
+    </visual>
+    <inertial>
+      <mass value="0.01"/>
+      <inertia ixx="0.000001" ixy="0" ixz="0"
+               iyy="0.000001" iyz="0" izz="0.000001"/>
+    </inertial>
+  </link>
+
+  <joint name="imu_joint" type="fixed">
+    <origin xyz="0 0 0.12" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child link="imu_link"/>
+  </joint>
+
+  <gazebo reference="imu_link">
+    <sensor name="imu" type="imu">
+      <topic>/imu_raw</topic>
+      <gz_frame_id>imu_link</gz_frame_id>
+      <update_rate>100</update_rate>
+      <always_on>true</always_on>
+      <imu>
+        <angular_velocity>
+          <x><noise type="gaussian"><mean>0</mean><stddev>0.009</stddev></noise></x>
+          <y><noise type="gaussian"><mean>0</mean><stddev>0.009</stddev></noise></y>
+          <z><noise type="gaussian"><mean>0</mean><stddev>0.009</stddev></noise></z>
+        </angular_velocity>
+        <linear_acceleration>
+          <x><noise type="gaussian"><mean>0</mean><stddev>0.100</stddev></noise></x>
+          <y><noise type="gaussian"><mean>0</mean><stddev>0.100</stddev></noise></y>
+          <z><noise type="gaussian"><mean>0</mean><stddev>0.100</stddev></noise></z>
+        </linear_acceleration>
+      </imu>
+    </sensor>
+  </gazebo>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       ros2_control  —  velocity interface for 4 wheels
+  ═══════════════════════════════════════════════════════════════ -->
+  <ros2_control name="GazeboSimSystem" type="system">
+    <hardware>
+      <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+    </hardware>
+    <joint name="front_left_wheel_joint">
+      <command_interface name="velocity"><param name="min">-10</param><param name="max">10</param></command_interface>
+      <state_interface name="position"/><state_interface name="velocity"/>
+    </joint>
+    <joint name="front_right_wheel_joint">
+      <command_interface name="velocity"><param name="min">-10</param><param name="max">10</param></command_interface>
+      <state_interface name="position"/><state_interface name="velocity"/>
+    </joint>
+    <joint name="rear_left_wheel_joint">
+      <command_interface name="velocity"><param name="min">-10</param><param name="max">10</param></command_interface>
+      <state_interface name="position"/><state_interface name="velocity"/>
+    </joint>
+    <joint name="rear_right_wheel_joint">
+      <command_interface name="velocity"><param name="min">-10</param><param name="max">10</param></command_interface>
+      <state_interface name="position"/><state_interface name="velocity"/>
+    </joint>
+  </ros2_control>
+
+  <!-- gz_ros2_control system plugin -->
+  <gazebo>
+    <plugin filename="gz_ros2_control-system"
+            name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+      <parameters>$(find mecanum_robot_sim)/config/mecanum_drive_controller.yaml</parameters>
+      <ros>
+        <remapping>/mecanum_drive_controller/reference:=/cmd_vel</remapping>
+        <remapping>/mecanum_drive_controller/odom:=/odom</remapping>
+      </ros>
+    </plugin>
+  </gazebo>
+
+</robot>

@@ -1,0 +1,43 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(sudo -n apt install -y ros-humble-nav2-behavior-tree ros-humble-behaviortree-cpp python3-rich libqt5xml5-dev)",
+      "Read(//usr/local/include/lightsfm/**)",
+      "Read(//home/prime/mobile_project/src/**)",
+      "Read(//opt/ros/humble/**)",
+      "Read(//usr/**)",
+      "Read(//home/prime/mobile_project/**)",
+      "Read(//home/prime/.ignition/fuel/fuel.gazebosim.org/**)",
+      "Read(//home/prime/.ignition/fuel/**)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"https://fuel.gazebosim.org/1.0/OpenRobotics/models/Ground%20Plane\")",
+      "Bash(ign fuel:*)",
+      "Bash(wait)",
+      "Bash(curl -s \"https://fuel.gazebosim.org/1.0/OpenRobotics/models?q=warehouse\")",
+      "Bash(python3 -c \"import sys,json; data=json.load\\(sys.stdin\\); [print\\(m['name']\\) for m in data]\")",
+      "Bash(curl -s \"https://fuel.gazebosim.org/1.0/OpenRobotics/models?q=shelf&page=1\")",
+      "Bash(python3 -c \"import sys,json; data=json.load\\(sys.stdin\\); [print\\(m['name'], '-', m['owner']\\) for m in data]\")",
+      "Read(//home/prime/.ros/log/**)",
+      "Bash(apt-cache show:*)",
+      "Bash(ls /home/prime/mobile_project/src/hunav_gazebo_fortress_wrapper/worlds/models/*.dae)",
+      "Bash(head -5 ls -lt /home/prime/.ros/log/*.log)",
+      "Bash(python3 -c ':*)",
+      "Bash(chmod +x /home/prime/mobile_project/src/warehouse_sim/warehouse_sim/actor_pose_publisher.py)",
+      "Bash(ros2 interface:*)",
+      "Bash(python3 -c \"import gz.msgs; print\\(dir\\(gz.msgs\\)\\)\")",
+      "Bash(python3 -c \"from gz.msgs.pose_pb2 import Pose; print\\('gz.msgs.Pose ok'\\)\")",
+      "Bash(python3 -)",
+      "Bash(colcon build:*)",
+      "Bash(ign gazebo:*)",
+      "Bash(gz sim:*)",
+      "Bash(head -10 find /usr/share/ignition* -maxdepth 5 -name \"*.dae\")",
+      "Read(//home/prime/.gz/**)",
+      "Bash(xargs -I{} dirname {})",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "Bash(ros2 pkg:*)",
+      "Bash(sudo apt-get:*)",
+      "Bash(sudo -S:*)",
+      "Read(//tmp/gz_ros2_control_src/**)"
+    ]
+  }
+}

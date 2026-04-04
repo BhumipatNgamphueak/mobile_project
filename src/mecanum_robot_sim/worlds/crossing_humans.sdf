@@ -1,0 +1,238 @@
+<?xml version="1.0" ?>
+<!--
+  World: crossing_humans.sdf
+  - Two humans walk from opposite ends and cross at the centre
+  - Three static box obstacles for path-planning / YOLO testing
+  - All geometry is inline SDF (no Fuel <include>) to avoid actor blinking
+-->
+<sdf version="1.7">
+  <world name="crossing_humans">
+
+    <gui>
+      <camera name="user_camera">
+        <pose>0 -20 18 0 0.8 1.5708</pose>
+      </camera>
+    </gui>
+
+    <physics name="10ms" type="ode">
+      <max_step_size>0.01</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <!-- Required plugins -->
+    <plugin filename="libignition-gazebo-physics-system.so"
+            name="ignition::gazebo::systems::Physics"/>
+    <plugin filename="libignition-gazebo-scene-broadcaster-system.so"
+            name="ignition::gazebo::systems::SceneBroadcaster"/>
+    <plugin filename="libignition-gazebo-user-commands-system.so"
+            name="ignition::gazebo::systems::UserCommands"/>
+    <plugin filename="libignition-gazebo-sensors-system.so"
+            name="ignition::gazebo::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
+    <!-- Sun -->
+    <light name="sun" type="directional">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 20 0 0 0</pose>
+      <diffuse>0.9 0.9 0.9 1</diffuse>
+      <specular>0.3 0.3 0.3 1</specular>
+      <attenuation><range>1000</range><constant>0.9</constant>
+        <linear>0.01</linear><quadratic>0.001</quadratic></attenuation>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <!-- ═══════════════════════════════════════════════════
+         GROUND PLANE  (20 × 20 m, grey tiles)
+    ═══════════════════════════════════════════════════ -->
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>30 30</size></plane></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>30 30</size></plane></geometry>
+          <material>
+            <ambient>0.6 0.6 0.6 1</ambient>
+            <diffuse>0.6 0.6 0.6 1</diffuse>
+            <specular>0.1 0.1 0.1 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ═══════════════════════════════════════════════════
+         BOUNDARY WALLS  (outline of the navigable area)
+    ═══════════════════════════════════════════════════ -->
+    <!-- North wall -->
+    <model name="wall_north">
+      <static>true</static>
+      <pose>0 10 1 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>20 0.2 2</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>20 0.2 2</size></box></geometry>
+          <material><ambient>0.4 0.4 0.4 1</ambient><diffuse>0.4 0.4 0.4 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <!-- South wall -->
+    <model name="wall_south">
+      <static>true</static>
+      <pose>0 -10 1 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>20 0.2 2</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>20 0.2 2</size></box></geometry>
+          <material><ambient>0.4 0.4 0.4 1</ambient><diffuse>0.4 0.4 0.4 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <!-- East wall -->
+    <model name="wall_east">
+      <static>true</static>
+      <pose>10 0 1 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.2 20 2</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>0.2 20 2</size></box></geometry>
+          <material><ambient>0.4 0.4 0.4 1</ambient><diffuse>0.4 0.4 0.4 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <!-- West wall -->
+    <model name="wall_west">
+      <static>true</static>
+      <pose>-10 0 1 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.2 20 2</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>0.2 20 2</size></box></geometry>
+          <material><ambient>0.4 0.4 0.4 1</ambient><diffuse>0.4 0.4 0.4 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ═══════════════════════════════════════════════════
+         STATIC OBSTACLES  (2 × 2 × 2 m boxes)
+         Placed off the human crossing paths so the robot
+         must navigate around them.
+    ═══════════════════════════════════════════════════ -->
+    <!-- Obstacle A – north-east quadrant -->
+    <model name="obstacle_A">
+      <static>true</static>
+      <pose>4 5 1 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>2 2 2</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>2 2 2</size></box></geometry>
+          <material>
+            <ambient>0.8 0.2 0.2 1</ambient>
+            <diffuse>0.8 0.2 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Obstacle B – south-west quadrant -->
+    <model name="obstacle_B">
+      <static>true</static>
+      <pose>-4 -5 1 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>2 2 2</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>2 2 2</size></box></geometry>
+          <material>
+            <ambient>0.2 0.5 0.8 1</ambient>
+            <diffuse>0.2 0.5 0.8 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Obstacle C – near centre, offset from crossing path -->
+    <model name="obstacle_C">
+      <static>true</static>
+      <pose>2 -4 1 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>2 2 2</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>2 2 2</size></box></geometry>
+          <material>
+            <ambient>0.2 0.8 0.3 1</ambient>
+            <diffuse>0.2 0.8 0.3 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ═══════════════════════════════════════════════════
+         HUMAN 1 – walks EAST  (left → right)
+         Path: (-8, 1.0) ──────────────→ (8, 1.0)
+               speed ~1.2 m/s → 16 m ≈ 13.3 s
+         Crosses the centre at t ≈ 6.7 s
+    ═══════════════════════════════════════════════════ -->
+    <actor name="human_1">
+      <skin>
+        <filename>/home/prime/.ignition/fuel/fuel.gazebosim.org/mingfei/models/actor/1/meshes/walk.dae</filename>
+        <scale>1.0</scale>
+      </skin>
+      <animation name="walk">
+        <filename>/home/prime/.ignition/fuel/fuel.gazebosim.org/mingfei/models/actor/1/meshes/walk.dae</filename>
+        <interpolate_x>true</interpolate_x>
+      </animation>
+      <script>
+        <loop>true</loop>
+        <delay_start>1.0</delay_start>
+        <auto_start>true</auto_start>
+        <trajectory id="0" type="walk" >
+          <!-- Leg 1: walk east -->
+          <waypoint><time>0.0</time> <pose>-8  1.0 1.0 0 0  0.0</pose></waypoint>
+          <waypoint><time>13.3</time><pose> 8  1.0 1.0 0 0  0.0</pose></waypoint>
+          <!-- Pause & turn at east end -->
+          <waypoint><time>14.3</time><pose> 8  1.0 1.0 0 0  3.1416</pose></waypoint>
+          <!-- Leg 2: walk west (return) -->
+          <waypoint><time>27.6</time><pose>-8  1.0 1.0 0 0  3.1416</pose></waypoint>
+          <!-- Pause & turn at west end (close loop) -->
+          <waypoint><time>28.6</time><pose>-8  1.0 1.0 0 0  0.0</pose></waypoint>
+        </trajectory>
+      </script>
+    </actor>
+
+    <!-- ═══════════════════════════════════════════════════
+         HUMAN 2 – walks WEST  (right → left)
+         Path: (8, -1.0) ──────────────→ (-8, -1.0)
+               Same speed, slightly offset Y so they pass
+               close to each other without overlapping.
+         Crosses the centre at t ≈ 6.7 s  ← same as Human 1
+    ═══════════════════════════════════════════════════ -->
+    <actor name="human_2">
+      <skin>
+        <filename>/home/prime/.ignition/fuel/fuel.gazebosim.org/mingfei/models/actor/1/meshes/walk.dae</filename>
+        <scale>1.0</scale>
+      </skin>
+      <animation name="walk">
+        <filename>/home/prime/.ignition/fuel/fuel.gazebosim.org/mingfei/models/actor/1/meshes/walk.dae</filename>
+        <interpolate_x>true</interpolate_x>
+      </animation>
+      <script>
+        <loop>true</loop>
+        <delay_start>1.0</delay_start>
+        <auto_start>true</auto_start>
+        <trajectory id="0" type="walk" >
+          <!-- Leg 1: walk west -->
+          <waypoint><time>0.0</time> <pose> 8 -1.0 1.0 0 0  3.1416</pose></waypoint>
+          <waypoint><time>13.3</time><pose>-8 -1.0 1.0 0 0  3.1416</pose></waypoint>
+          <!-- Pause & turn at west end -->
+          <waypoint><time>14.3</time><pose>-8 -1.0 1.0 0 0  0.0</pose></waypoint>
+          <!-- Leg 2: walk east (return) -->
+          <waypoint><time>27.6</time><pose> 8 -1.0 1.0 0 0  0.0</pose></waypoint>
+          <!-- Pause & turn at east end (close loop) -->
+          <waypoint><time>28.6</time><pose> 8 -1.0 1.0 0 0  3.1416</pose></waypoint>
+        </trajectory>
+      </script>
+    </actor>
+
+  </world>
+</sdf>

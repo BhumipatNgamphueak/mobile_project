@@ -1,0 +1,357 @@
+Panels:
+  - Class: rviz_common/Displays
+    Help Height: 0
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /Global Options1
+        - /Robot Model1
+        - /TF1
+        - /Humans1
+        - /Human Predicted Paths1
+        - /Robot Trail1
+        - /Static Obstacles1
+        - /Odometry1
+        - /LiDAR Scan1
+        - /Real Map1
+        - /Detected Humans1
+        - /Planned Path1
+      Splitter Ratio: 0.6
+    Tree Height: 800
+  - Class: rviz_common/Views
+    Name: Views
+    Splitter Ratio: 0.5
+
+Visualization Manager:
+  Class: ""
+  Displays:
+
+    - Class: rviz_default_plugins/Grid
+      Name: Ground Grid
+      Alpha: 0.4
+      Cell Size: 1
+      Color: 160; 160; 164
+      Line Style:
+        Line Width: 0.03
+        Value: Lines
+      Normal Cell Count: 0
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Plane: XY
+      Plane Cell Count: 30
+      Reference Frame: <Fixed Frame>
+      Value: true
+
+    - Class: rviz_default_plugins/RobotModel
+      Name: Robot Model
+      Alpha: 1
+      Description File: ""
+      Description Source: Topic
+      Description Topic: /robot_description
+      Enabled: true
+      Links: {}
+      TF Prefix: ""
+      Value: true
+
+    - Class: rviz_default_plugins/TF
+      Name: TF
+      Enabled: true
+      Frame Timeout: 15
+      Frames:
+        All Enabled: false
+        base_link:
+          Value: true
+        odom:
+          Value: true
+        lidar_link:
+          Value: true
+        camera_link:
+          Value: false
+        imu_link:
+          Value: false
+        front_left_wheel:
+          Value: false
+        front_right_wheel:
+          Value: false
+        rear_left_wheel:
+          Value: false
+        rear_right_wheel:
+          Value: false
+      Marker Scale: 0.5
+      Show Arrows: true
+      Show Axes: true
+      Show Names: true
+      Tree:
+        odom:
+          base_link:
+            {}
+      Update Interval: 0
+      Value: true
+
+    # ── Simulated humans (ground truth from human_marker_publisher) ───────
+
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Humans
+      Enabled: true
+      Namespaces:
+        human_body: true
+        human_label: true
+        human_vel: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /visualization/humans
+      Value: true
+
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Human Predicted Paths
+      Enabled: true
+      Namespaces:
+        human_pred: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /visualization/human_paths
+      Value: true
+
+    # ── Robot history & static obstacles ──────────────────────────────────
+
+    - Class: rviz_default_plugins/Path
+      Name: Robot Trail
+      Alpha: 1
+      Buffer Length: 1
+      Color: 25; 255; 0
+      Enabled: true
+      Head Diameter: 0.3
+      Head Length: 0.2
+      Length: 0.3
+      Line Style: Lines
+      Line Width: 0.05
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Pose Color: 255; 85; 255
+      Pose Style: None
+      Radius: 0.03
+      Shaft Diameter: 0.1
+      Shaft Length: 0.1
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /visualization/robot_trail
+      Value: true
+
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Static Obstacles
+      Enabled: true
+      Namespaces:
+        obstacles: true
+        obstacle_wire: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /visualization/obstacles
+      Value: true
+
+    - Class: rviz_default_plugins/Odometry
+      Name: Odometry
+      Enabled: true
+      Angle Tolerance: 0.1
+      Color: 255; 25; 0
+      Color Style: Unique
+      Keep: 50
+      Length: 0.3
+      Position Tolerance: 0.1
+      Shape:
+        Alpha: 1
+        Axes Length: 0.3
+        Axes Radius: 0.02
+        Color: 255; 25; 0
+        Head Length: 0.07
+        Head Radius: 0.035
+        Shaft Length: 0.23
+        Shaft Radius: 0.015
+        Value: Arrow
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /odom
+      Value: true
+
+    # ── Sensor data ───────────────────────────────────────────────────────
+
+    - Class: rviz_default_plugins/LaserScan
+      Name: LiDAR Scan
+      Enabled: true
+      Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Color: 255; 50; 50
+      Color Transformer: FlatColor
+      Decay Time: 0
+      Max Color: 255; 255; 255
+      Max Intensity: 4096
+      Min Color: 0; 0; 0
+      Min Intensity: 0
+      Position Transformer: XYZ
+      Queue Size: 10
+      Selectable: true
+      Size (Pixels): 3
+      Size (m): 0.05
+      Style: Points
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /scan
+      Use Fixed Frame: true
+      Use rainbow: true
+      Value: true
+
+    # ── Maps: robot's knowledge vs real world ─────────────────────────────
+
+    - Class: rviz_default_plugins/Map
+      Name: Real Map
+      Enabled: true
+      Alpha: 0.5
+      Color Scheme: map
+      Draw Behind: false
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /real_map
+      Use Timestamp: false
+      Value: true
+
+    # ── Algorithm outputs ─────────────────────────────────────────────────
+
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Detected Humans
+      Enabled: true
+      Namespaces:
+        detected_humans: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /detected_humans
+      Value: true
+
+    - Class: rviz_default_plugins/Path
+      Name: Planned Path
+      Alpha: 1
+      Buffer Length: 1
+      Color: 0; 170; 255
+      Enabled: true
+      Head Diameter: 0.3
+      Head Length: 0.2
+      Length: 0.3
+      Line Style: Lines
+      Line Width: 0.06
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0.05
+      Pose Color: 255; 255; 0
+      Pose Style: Arrows
+      Radius: 0.03
+      Shaft Diameter: 0.1
+      Shaft Length: 0.1
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /planned_path
+      Value: true
+
+  Enabled: true
+  Global Options:
+    Background Color: 30; 30; 30
+    Fixed Frame: odom
+    Frame Rate: 30
+
+  Name: root
+  Tools:
+    - Class: rviz_default_plugins/Interact
+      Hide Inactive Icon: false
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+    - Class: rviz_default_plugins/FocusCamera
+    - Class: rviz_default_plugins/Measure
+      Line color: 128; 128; 0
+    - Class: rviz_default_plugins/PublishPoint
+      Single click: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /clicked_point
+
+  Transformation:
+    Current:
+      Class: rviz_default_plugins/TF
+
+  Value: true
+
+  Views:
+    Current:
+      Class: rviz_default_plugins/TopDownOrtho
+      Enable Stereo Rendering:
+        Stereo Eye Separation: 0.06
+        Stereo Focal Distance: 1
+        Swap Stereo Eyes: false
+        Value: false
+      Invert Z Axis: false
+      Name: Current View
+      Near Clip Distance: 0.01
+      Scale: 28
+      Target Frame: odom
+      Value: TopDownOrtho (rviz_default_plugins)
+      X: 0
+      Y: 0
+    Saved: ~
+
+Window Geometry:
+  Displays:
+    collapsed: false
+  Height: 900
+  Hide Left Dock: false
+  Hide Right Dock: true
+  Views:
+    collapsed: false
+  Width: 1400
+  X: 50
+  Y: 50
