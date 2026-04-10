@@ -1,314 +1,408 @@
-# Mecanum Robot Simulation — ROS 2 Humble + Gazebo Ignition Fortress
+# Mecanum Robot Simulation — ROS 2 Humble + Ignition Gazebo Fortress
 
-A research simulation platform for developing and testing **human detection**, **path planning**, and **pure pursuit control** algorithms on a mecanum-wheeled mobile robot.
+A research simulation platform for developing and testing **human detection**, **path planning**, and **path following** algorithms on a mecanum-wheeled mobile robot.
 
-The project ships three skeleton packages with full ROS 2 infrastructure wired up — developers only need to fill in their algorithm inside the clearly marked `TODO` stubs.
+Three skeleton packages ship with full ROS 2 infrastructure wired up. Each developer only needs to fill in their algorithm inside the clearly marked `TODO` stubs — everything else (simulation, bridges, odometry, visualisation) is already running.
+
+---
 
 ## Prerequisites
 
-- **ROS 2 Humble Hawksbill**
-- **Ubuntu 22.04 LTS**
-- **Python 3.10+**
-- **Gazebo Ignition Fortress (gz-sim 6)**
-- **colcon** build tool
+| Requirement | Version |
+|-------------|---------|
+| Ubuntu | 22.04 LTS |
+| ROS 2 | Humble Hawksbill |
+| Gazebo | Ignition Fortress (gz-sim 6) |
+| Python | 3.10+ |
+| colcon | latest |
 
-If you don't have ROS 2 installed, follow the official guide: https://docs.ros.org/en/humble/Installation.html
+---
 
 ## Installation
 
-### 1. Clone the Repository
+### 1. Clone the repository
+
 ```bash
 git clone https://github.com/BhumipatNgamphueak/mobile_project.git ~/mobile_project
 ```
 
-### 2. Install Dependencies
+### 2. Install ROS dependencies
+
 ```bash
 sudo apt update && sudo apt install -y \
   ros-humble-ros-gz-sim \
   ros-humble-ros-gz-bridge \
   ros-humble-ros-gz-image \
-  ros-humble-gz-ros2-control \
-  ros-humble-mecanum-drive-controller \
-  ros-humble-joint-state-broadcaster \
-  ros-humble-controller-manager \
   ros-humble-robot-state-publisher \
+  ros-humble-joint-state-publisher \
   ros-humble-xacro \
   ros-humble-rviz2 \
   ros-humble-teleop-twist-keyboard \
   ros-humble-nav-msgs \
   ros-humble-sensor-msgs \
-  ros-humble-visualization-msgs
+  ros-humble-visualization-msgs \
+  ros-humble-tf2-ros
 ```
 
-Download the actor mesh (human walking animation) used in the Gazebo world:
+### 3. Download the walking actor mesh
 
 ```bash
-mkdir -p ~/.ignition/fuel/fuel.gazebosim.org/mingfei/models/actor/1/meshes
 ign fuel download -u https://fuel.gazebosim.org/1.0/mingfei/models/actor
 ```
 
-### 3. Build the Project
+### 4. Build
+
 ```bash
 cd ~/mobile_project
 source /opt/ros/humble/setup.bash
-colcon build --symlink-install
+colcon build
+source install/setup.bash
 ```
 
-### 4. Source the Environment
-```bash
-source ~/mobile_project/install/setup.bash
-```
+### 5. Add to `.bashrc`
 
-### 5. Add to bashrc for Automatic Sourcing
 ```bash
 echo "source ~/mobile_project/install/setup.bash" >> ~/.bashrc
 source ~/.bashrc
 ```
 
-## Running the Project
+---
 
-You need **TWO terminals** to run this project.
+## Running the Simulation
 
-### Terminal 1: Launch Simulation
+### Launch everything
+
 ```bash
-cd ~/mobile_project
-source install/setup.bash
 ros2 launch mecanum_robot_sim spawn_mecanum.launch.py
 ```
 
-This opens Gazebo + RViz together. Two humans walk across the world, the mecanum robot spawns at the origin.
+Gazebo and RViz open together. Two humans walk across the world. The robot spawns at world (−7, 4) after ~8 seconds.
 
-### Terminal 2: Teleoperation (optional)
+### Launch arguments
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `rviz` | `true` | Open RViz2 |
+| `test_path` | `false` | Use a built-in test path instead of `path_planning_node` |
+| `path` | `scurve` | Test path to use (see table below) |
+| `evaluate` | `false` | Save a tracking-error PNG when goal is reached |
+| `spawn_x` | `-7.0` | Robot spawn x in world frame |
+| `spawn_y` | `4.0` | Robot spawn y in world frame |
+
+### Test paths (bypass path_planning)
+
 ```bash
-cd ~/mobile_project
-source install/setup.bash
+ros2 launch mecanum_robot_sim spawn_mecanum.launch.py test_path:=true path:=uturn
+```
+
+| Name | Tests |
+|------|-------|
+| `scurve` | Straight + curves + proximity slowdown near obstacle A (default) |
+| `straight` | Pure straight line — baseline speed and heading |
+| `uturn` | Rectangular U-turn — curvature regulation |
+| `diagonal` | 45° diagonal — mecanum lateral correction (`k_lat`) |
+| `slalom` | Weave between obstacles B & C — combined curvature + lateral |
+| `loop` | Full rectangular circuit — checks heading drift |
+
+### Teleoperation
+
+```bash
 ros2 run teleop_twist_keyboard teleop_twist_keyboard \
-  --ros-args -p stamped:=true -r /cmd_vel:=/cmd_vel
+  --ros-args -p stamped:=true
 ```
 
-> **Important**: the `-p stamped:=true` flag is required.
-> The `mecanum_drive_controller` expects `geometry_msgs/TwistStamped`, not plain `Twist`.
+---
 
-### Launch Options
+## Architecture
 
-| Option | Command |
-|--------|---------|
-| Without RViz | `ros2 launch mecanum_robot_sim spawn_mecanum.launch.py rviz:=false` |
-| Custom spawn position | `ros2 launch mecanum_robot_sim spawn_mecanum.launch.py spawn_x:=-5.0 spawn_y:=2.0` |
+```
+Ignition Gazebo
+  │
+  ├─ VelocityControl plugin ◄────── /cmd_vel_gz  (Twist)
+  ├─ ground-truth pose ───────────► /gz_dynamic_poses
+  ├─ /lidar ──────────────────────► /scan          (LaserScan)
+  ├─ /front_camera ───────────────► /front_camera/image_raw
+  └─ /imu_raw ────────────────────► /imu
 
-## Sending a Goal Pose
+gz_pose_odom ──────────────────────► /odom  +  odom→base_link TF
+
+  ┌──────────────────┐  /detected_human_poses  ┌──────────────────────┐
+  │ human_detection  │ ───────────────────────► │   path_planning      │
+  │  [IMPLEMENT]     │ ◄── /scan                │   [IMPLEMENT]        │
+  │                  │ ◄── /front_camera/...     │                      │
+  └──────────────────┘                          │ ◄── /odom            │
+                                                │ ◄── /goal_pose       │
+                                                │ ──► /planned_path ─┐ │
+                                                │ ──► /real_map      │ │
+                                                └────────────────────┘ │
+                                                                        │
+  ┌─────────────────────────────────────────────────────────────────┐  │
+  │  pure_pursuit  (Regulated Pure Pursuit — COMPLETE)               │  │
+  │   ◄── /planned_path ◄──────────────────────────────────────────┘  │
+  │   ◄── /odom                                                        │
+  │   ◄── /real_map                                                    │
+  │   ──► /cmd_vel  (TwistStamped)                                     │
+  └─────────────────────────────────────────────────────────────────┘
+                │
+         cmd_vel_relay
+                │ (strips header, fixes VelocityControl y-axis)
+                ▼
+          /cmd_vel_gz  ──► Ignition VelocityControl
+```
+
+---
+
+## Topic Interface Map
+
+| Topic | Type | Publisher | Subscriber |
+|-------|------|-----------|------------|
+| `/scan` | `sensor_msgs/LaserScan` | Gazebo bridge | `human_detection` |
+| `/front_camera/image_raw` | `sensor_msgs/Image` | Gazebo bridge | `human_detection` |
+| `/imu` | `sensor_msgs/Imu` | Gazebo bridge | *(available)* |
+| `/odom` | `nav_msgs/Odometry` | `gz_pose_odom` | `path_planning`, `pure_pursuit` |
+| `/goal_pose` | `geometry_msgs/PoseStamped` | operator | `path_planning` |
+| `/detected_human_poses` | `geometry_msgs/PoseArray` | `human_detection` | `path_planning` |
+| `/detected_humans` | `visualization_msgs/MarkerArray` | `human_detection` | RViz |
+| `/planned_path` | `nav_msgs/Path` | `path_planning` | `pure_pursuit` |
+| `/real_map` | `nav_msgs/OccupancyGrid` | `path_planning` | `pure_pursuit`, RViz |
+| `/cmd_vel` | `geometry_msgs/TwistStamped` | `pure_pursuit` | `cmd_vel_relay` |
+
+---
+
+## World Geometry (odom frame)
+
+Robot spawns at world (−7, 4) which becomes odom origin (0, 0).
+Conversion: `odom_x = world_x + 7`,  `odom_y = world_y − 4`
+
+```
+  odom y
+    6 ─── north wall ────────────────────────────────────
+          │                                              │
+          │        obstacle_A (11, 1)  2×2 m            │
+          │              ■                               │
+    0  spawn(0,0)                                        │
+          │                                              │
+          │                     obstacle_C (9, −8) ■    │
+          │  obstacle_B (3, −9) ■                        │
+  −14 ─── south wall ───────────────────────────────────
+       −3                                              17  → odom x
+```
+
+Obstacles are 2×2 m squares. With `robot_radius = 0.35 m` inflation, the safe clearance border is **1.35 m** from each obstacle centre edge.
+
+---
+
+## Developer Guide
+
+### Package ownership
+
+| Package | Owner | Status |
+|---------|-------|--------|
+| `mecanum_robot_sim` | Sim infra | Complete |
+| `pure_pursuit` | Path following | **Complete — do not modify** |
+| `path_planning` | Path planning team | **Implement here** |
+| `human_detection` | Perception team | **Implement here** |
+
+---
+
+### Implementing `human_detection`
+
+**File:** [src/human_detection/human_detection/human_detection_node.py](src/human_detection/human_detection/human_detection_node.py)
+
+Find `_stub_detect()` and replace it with your algorithm. Return a list of `(x, y)` positions in the **odom frame**. The node handles all publishing automatically.
+
+```python
+def _stub_detect(self) -> list[tuple[float, float]]:
+    # TODO: implement your detection logic
+    # Return [(x1, y1), (x2, y2), ...]  in odom frame
+    return []
+```
+
+**Inputs available:**
+
+| Attribute | Type | Updated |
+|-----------|------|---------|
+| `self._latest_scan` | `LaserScan` | 10 Hz |
+| `self._latest_image` | `Image` | 30 Hz |
+
+**Helper:** `_laser_to_odom(range, angle_rad)` — currently a stub. Implement it properly using `tf2_ros.Buffer` / `TransformListener` to transform from `lidar_link` → `odom`.
+
+**Test without Gazebo:**
 
 ```bash
-ros2 topic pub --once /goal_pose geometry_msgs/msg/PoseStamped \
-  '{header: {frame_id: odom}, pose: {position: {x: 5.0, y: -2.0}, orientation: {w: 1.0}}}'
+# Fake a scan
+ros2 topic pub /scan sensor_msgs/LaserScan '{header: {frame_id: lidar_link}}'
+
+ros2 run human_detection human_detection_node
+
+# Check output
+ros2 topic echo /detected_human_poses
 ```
 
-The `path_planning_node` will receive the goal and publish a path on `/planned_path`.
-The `pure_pursuit_node` will follow it and publish velocity commands on `/cmd_vel`.
+---
 
-## Implementing the Algorithms
+### Implementing `path_planning`
 
-All three skeleton nodes are in `src/<package>/<package>/<package>_node.py`.
-Each file has a `_stub_*()` method to replace and helper utilities already written.
+**File:** [src/path_planning/path_planning/path_planning_node.py](src/path_planning/path_planning/path_planning_node.py)
 
-### 1. `human_detection` — [src/human_detection/human_detection/human_detection_node.py](src/human_detection/human_detection/human_detection_node.py)
+Find `_stub_plan()` and replace it with your algorithm. Return a `nav_msgs/Path` in the **odom frame**.
 
-**Where to implement**: `_run_detection()` and `_stub_detect()`
-
-```
-Subscribes:
-  /scan                     sensor_msgs/LaserScan    LiDAR (10 Hz)
-  /front_camera/image_raw   sensor_msgs/Image        Camera (30 Hz)
-
-Publishes:
-  /detected_humans          visualization_msgs/MarkerArray
-  /detected_human_poses     geometry_msgs/PoseArray
+```python
+def _stub_plan(self) -> Path | None:
+    # TODO: A*, RRT*, TEB, etc.
+    # Use self._robot_pose, self._goal_pose, self._human_poses
+    # Return nav_msgs/Path with header.frame_id = 'odom'
+    ...
 ```
 
-**Suggested approaches:**
+**Inputs available:**
 
-| Method | Description |
-|--------|-------------|
-| LiDAR leg detector | Cluster scan returns into ~0.3 m diameter blobs; pairs ≈ 0.5 m apart are legs |
-| YOLOv8 (camera) | Run inference on `/front_camera/image_raw`; estimate depth from bounding box size |
-| Fusion | Match LiDAR clusters to YOLO bounding boxes for robust 3D pose estimation |
+| Attribute | Type | Source |
+|-----------|------|--------|
+| `self._robot_pose` | `geometry_msgs/Pose` | from `/odom` |
+| `self._goal_pose` | `geometry_msgs/Pose` | from `/goal_pose` |
+| `self._human_poses` | `list[Pose]` | from `/detected_human_poses` |
+| `self._static_obstacles` | `list[(cx, cy, half_size)]` | hardcoded from SDF |
 
-**Key note**: `_laser_to_odom()` is a stub — implement it with `tf2_ros.Buffer` to properly transform laser scan hits from `lidar_link` frame to `odom` frame.
+**Static map** is already built and published on `/real_map` (200×200 cells, 0.1 m resolution, origin at odom (−3, −14)).
+Use it as the grid for A* or similar — static obstacles and walls are already marked.
+Inflate human positions by `self.human_radius` (default 0.6 m) before planning.
 
-### 2. `path_planning` — [src/path_planning/path_planning/path_planning_node.py](src/path_planning/path_planning/path_planning_node.py)
+**Path contract with pure_pursuit:**
 
-**Where to implement**: `_replan()` and `_stub_plan()`
+- `path.header.frame_id = 'odom'`
+- Waypoint spacing ≤ 0.05 m (sparse points cause jumpy tracking)
+- Re-publish at ~1–2 Hz — pure_pursuit always needs a fresh copy
+- All points must be outside inflated obstacle zones
 
-```
-Subscribes:
-  /odom                     nav_msgs/Odometry
-  /goal_pose                geometry_msgs/PoseStamped
-  /detected_human_poses     geometry_msgs/PoseArray
+**Send a goal pose:**
 
-Publishes:
-  /planned_path             nav_msgs/Path              (replanned at 2 Hz)
-  /real_map                 nav_msgs/OccupancyGrid     (latched, published once)
-```
-
-**Suggested approaches:**
-
-| Algorithm | Notes |
-|-----------|-------|
-| A\* | Discretise the `/real_map` grid; inflate static + dynamic obstacles; search |
-| RRT / RRT\* | Sample-based; good for cluttered environments |
-| DWA | Dynamic Window Approach; handles moving obstacles natively |
-| TEB | Timed Elastic Band; good for narrow passages |
-
-**Map details:**
-- Resolution: 0.1 m/cell, 200×200 cells covering ±10 m world
-- Origin in odom: `(-3, -14)` — accounts for robot spawn offset `(-7, 4)` from world centre
-- Static obstacles (A, B, C) pre-inflated by `robot_radius` (default 0.35 m)
-- Human positions are received as `PoseArray` — inflate by `human_radius` (default 0.6 m) before planning
-
-### 3. `pure_pursuit` — [src/pure_pursuit/pure_pursuit/pure_pursuit_node.py](src/pure_pursuit/pure_pursuit/pure_pursuit_node.py)
-
-**Where to implement**: `_control_loop()` and `_stub_control()`
-
-```
-Subscribes:
-  /planned_path   nav_msgs/Path
-  /odom           nav_msgs/Odometry
-
-Publishes:
-  /cmd_vel        geometry_msgs/TwistStamped   (20 Hz)
-```
-
-**Classic Pure Pursuit algorithm:**
-1. Find the lookahead point: first path pose ≥ `lookahead_dist` metres from robot
-2. Transform it to robot body frame using `_world_to_robot()`
-3. Compute curvature `κ = 2·y_local / L²` where `L = lookahead_dist`
-4. Set `angular_vel = max_linear_vel × κ`
-5. Clamp and publish via `_make_twist(vx, vy, wz)`
-
-**Mecanum extension:** Set `linear.y` proportional to the cross-track error so the robot slides sideways to correct path deviation without excessive yawing.
-
-Helper methods already implemented:
-- `_find_lookahead_point()` — walks path array, returns (x, y) in odom frame
-- `_world_to_robot(wx, wy)` — odom → robot body frame rotation
-- `_make_twist(vx, vy, wz)` — clamps velocities, builds TwistStamped
-- `_yaw_from_quaternion(q)` — extracts yaw from geometry_msgs Quaternion
-
-> **Important**: `/cmd_vel` must be `geometry_msgs/TwistStamped`.
-> Publishing plain `Twist` will be silently ignored by `mecanum_drive_controller`.
-
-## Configuration Parameters
-
-### Available Parameters by Node
-
-#### 1. Human Detection Node (`/human_detection_node`)
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `cluster_tolerance` | 0.3 | LiDAR cluster diameter threshold (m) |
-| `leg_pair_dist` | 0.5 | Expected distance between leg clusters (m) |
-| `human_radius` | 0.3 | Radius of detected human marker (m) |
-
-#### 2. Path Planning Node (`/path_planning_node`)
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `replan_rate` | 2.0 | Replanning frequency (Hz) |
-| `robot_radius` | 0.35 | Inflation radius for static obstacles (m) |
-| `human_radius` | 0.6 | Inflation radius for dynamic obstacles (m) |
-| `map_resolution` | 0.1 | Grid cell size (m/cell) |
-
-#### 3. Pure Pursuit Node (`/pure_pursuit_node`)
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `lookahead_dist` | 1.0 | Lookahead distance (m) |
-| `max_linear_vel` | 1.0 | Maximum linear velocity (m/s) |
-| `max_angular_vel` | 1.5 | Maximum angular velocity (rad/s) |
-| `control_rate` | 20.0 | Control loop frequency (Hz) |
-
-**Example usage:**
 ```bash
-# Get all node names
-ros2 node list
-
-# List parameters for a node
-ros2 param list /pure_pursuit_node
-
-# Get a parameter value
-ros2 param get /pure_pursuit_node lookahead_dist
-
-# Set a parameter value
-ros2 param set /pure_pursuit_node lookahead_dist 1.5
+ros2 topic pub --once /goal_pose geometry_msgs/PoseStamped \
+  '{header: {frame_id: odom}, pose: {position: {x: 8.0, y: 2.0}, orientation: {w: 1.0}}}'
 ```
+
+**Test without Gazebo:**
+
+```bash
+# Terminal 1 — fake odometry
+ros2 topic pub /odom nav_msgs/Odometry \
+  '{pose: {pose: {position: {x: 0.0, y: 0.0}, orientation: {w: 1.0}}}}'
+
+# Terminal 2
+ros2 run path_planning path_planning_node
+
+# Terminal 3 — send a goal
+ros2 topic pub --once /goal_pose geometry_msgs/PoseStamped \
+  '{header: {frame_id: odom}, pose: {position: {x: 8.0, y: 2.0}}}'
+
+ros2 topic echo /planned_path
+```
+
+---
+
+### Pure Pursuit (complete — read-only)
+
+Implements **Regulated Pure Pursuit (RPP)** adapted for mecanum kinematics.
+
+**Subscriptions:**
+
+| Topic | Required |
+|-------|----------|
+| `/planned_path` | Yes |
+| `/odom` | Yes |
+| `/real_map` | No (proximity slowdown only) |
+
+**Parameters:**
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `v_max` | 0.8 m/s | Maximum forward speed |
+| `v_min` | 0.05 m/s | Minimum speed |
+| `lt` | 1.0 s | Lookahead time gain |
+| `lt_min` | 0.25 m | Minimum lookahead distance |
+| `lt_max` | 1.2 m | Maximum lookahead distance |
+| `omega_max` | 3.2 rad/s | Maximum angular speed |
+| `r_min` | 0.9 m | Min turn radius for curvature heuristic |
+| `d_prox` | 0.7 m | Proximity slowdown trigger distance |
+| `alpha` | 0.7 | Proximity gain (≤ 1.0) |
+| `k_lat` | 0.5 | Lateral correction gain (mecanum strafe) |
+| `v_y_max` | 0.3 m/s | Max lateral speed |
+| `goal_tolerance` | 0.15 m | Stop when within this distance |
+| `t_collision` | 1.5 s | Predictive collision horizon |
+| `control_hz` | 50.0 Hz | Control loop rate |
+
+---
 
 ## Project Structure
 
 ```
-src/
-├── mecanum_robot_sim/      Simulation environment (ament_cmake)
-│   ├── urdf/               Robot URDF/xacro files
-│   ├── worlds/             Gazebo SDF world files
-│   ├── rviz/               RViz configuration
-│   └── launch/             Launch files
-├── human_detection/        [SKELETON] Perception node (ament_python)
-├── path_planning/          [SKELETON] Planning node  (ament_python)
-└── pure_pursuit/           [SKELETON] Control node   (ament_python)
+mobile_project/
+├── README.md
+└── src/
+    ├── mecanum_robot_sim/          Simulation infrastructure
+    │   ├── urdf/
+    │   │   └── mecanum_robot.urdf.xacro   Robot + sensors + VelocityControl plugin
+    │   ├── worlds/
+    │   │   └── crossing_humans.sdf        Gazebo world with walking humans
+    │   ├── config/
+    │   │   └── robot_viz.rviz             RViz config
+    │   ├── launch/
+    │   │   └── spawn_mecanum.launch.py    Main launch file
+    │   └── scripts/
+    │       ├── gz_pose_odom.py            Gazebo ground-truth → /odom + TF
+    │       ├── cmd_vel_relay.py           TwistStamped→Twist, fixes y-axis flip
+    │       └── human_marker_publisher.py  Analytic human markers for RViz
+    │
+    ├── human_detection/            ← IMPLEMENT HERE
+    │   └── human_detection/
+    │       └── human_detection_node.py
+    │
+    ├── path_planning/              ← IMPLEMENT HERE
+    │   └── path_planning/
+    │       └── path_planning_node.py
+    │
+    └── pure_pursuit/               Complete — do not modify
+        └── pure_pursuit/
+            ├── pure_pursuit_node.py        RPP controller
+            ├── test_path_publisher.py      Built-in test paths (bypass path_planning)
+            └── path_evaluator.py           Records tracking error, saves PNG plot
 ```
 
-### Data Flow
-
-```
-Gazebo Ignition
-  ├── /scan           LiDAR 360°, 12 m range, 10 Hz
-  ├── /imu            Accelerometer + gyro, 100 Hz
-  ├── /front_camera   RGB 640×480, 30 Hz
-  └── /odom           Odometry from mecanum_drive_controller
-
-/scan + /front_camera  →  [human_detection_node]  →  /detected_human_poses
-/odom + /goal_pose + /detected_human_poses  →  [path_planning_node]  →  /planned_path
-/planned_path + /odom  →  [pure_pursuit_node]  →  /cmd_vel (TwistStamped)
-/cmd_vel  →  mecanum_drive_controller  →  Gazebo wheel velocities
-```
+---
 
 ## Troubleshooting
 
-**Robot does not move with teleop**
-> Use `-p stamped:=true` — the controller requires `TwistStamped`, not `Twist`.
+**Robot does not appear in RViz immediately**
+> Normal — the robot spawns in Gazebo after ~8 s. RViz will show it as soon as `gz_pose_odom` receives the first ground-truth pose from Gazebo.
 
-**Humans blink or disappear in Gazebo**
-> Ensure the world physics `max_step_size` is `0.01` (not `0.001`).
-> The `Sensors` plugin must be present in the SDF world plugins block.
+**Robot moves wrong direction laterally**
+> `cmd_vel_relay.py` negates `linear.y` to correct VelocityControl's y-axis flip. If the robot strafes backwards, this is already handled.
 
-**Sensor topics are empty**
-> The `<plugin filename="libignition-gazebo-sensors-system.so">` block must be in `crossing_humans.sdf`. Check that `ogre2` render engine is available.
+**Human poses not visible in RViz**
+> Ignition actors are not in `dynamic_pose/info`. `human_marker_publisher` computes positions analytically from `/clock` + SDF waypoints. Check the `/human_markers` topic.
 
-**`robot_description` YAML parse error**
-> The xacro command must be wrapped: `ParameterValue(Command([...]), value_type=str)`.
+**Sensor topics empty**
+> The `<plugin filename="libignition-gazebo-sensors-system.so">` block must be present in `crossing_humans.sdf`. Requires the `ogre2` render engine.
 
-**Human poses not appearing in RViz**
-> Ignition actors are NOT published via `pose/info` or `dynamic_pose/info`.
-> `human_marker_publisher` computes positions analytically from `/clock` + SDF waypoints.
-
-**`mecanum_drive_controller` fails to spawn**
-> It must be spawned *after* `joint_state_broadcaster`. The launch file uses chained `RegisterEventHandler(OnProcessExit(...))` for this.
-
-**Build errors after changes**
+**Build errors after editing**
 ```bash
-rm -rf build install log
-colcon build --symlink-install
+colcon build --packages-select <package_name>
+source install/setup.bash
 ```
 
-## Citation
+**Full clean build**
+```bash
+rm -rf build install log
+colcon build
+source install/setup.bash
+```
 
-The mecanum robot URDF kinematics is adapted from:
-
-> **gz_ros2_control** by ros-controls contributors
-> https://github.com/ros-controls/gz_ros2_control
-> License: Apache 2.0
-
-Human actor mesh: **mingfei/actor** on Ignition Fuel
-https://app.gazebosim.org/mingfei/fuels/models/actor
+---
 
 ## License
 
 Apache 2.0
+
+The mecanum robot URDF is adapted from [gz_ros2_control](https://github.com/ros-controls/gz_ros2_control) by ros-controls contributors (Apache 2.0).
+Human actor mesh: [mingfei/actor](https://app.gazebosim.org/mingfei/fuels/models/actor) on Ignition Fuel.

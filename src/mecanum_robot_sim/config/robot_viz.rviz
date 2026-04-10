@@ -16,6 +16,7 @@ Panels:
         - /Real Map1
         - /Detected Humans1
         - /Planned Path1
+        - /Actual Path1
       Splitter Ratio: 0.6
     Tree Height: 800
   - Class: rviz_common/Views
@@ -239,7 +240,7 @@ Visualization Manager:
       Name: Real Map
       Enabled: true
       Alpha: 0.5
-      Color Scheme: map
+      Color Scheme: costmap
       Draw Behind: false
       Topic:
         Depth: 1
@@ -294,6 +295,37 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /planned_path
+      Value: true
+
+    # ── Actual path taken by robot (path_evaluator_node) ──────────────────
+
+    - Class: rviz_default_plugins/Path
+      Name: Actual Path
+      Alpha: 1
+      Buffer Length: 1
+      Color: 244; 67; 54
+      Enabled: true
+      Head Diameter: 0.2
+      Head Length: 0.1
+      Length: 0.2
+      Line Style: Lines
+      Line Width: 0.04
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0.02
+      Pose Color: 255; 152; 0
+      Pose Style: None
+      Radius: 0.02
+      Shaft Diameter: 0.08
+      Shaft Length: 0.08
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /visualization/actual_path
       Value: true
 
   Enabled: true

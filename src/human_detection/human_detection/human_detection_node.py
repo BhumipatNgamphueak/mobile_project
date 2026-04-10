@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-human_detection_node.py  —  SKELETON
-=====================================
+human_detection_node.py
+=======================
 Detect humans from LiDAR scan and/or camera image and publish
 their estimated poses for path planning and visualisation.
 
 Inputs
 ------
-/scan                   sensor_msgs/LaserScan      2-D LiDAR (bridged from /lidar)
+/scan                   sensor_msgs/LaserScan      2-D LiDAR (10 Hz)
 /front_camera/image_raw sensor_msgs/Image          RGB camera 640×480 30 Hz
 
 Outputs
@@ -69,56 +69,37 @@ class HumanDetectionNode(Node):
         self._latest_scan:  LaserScan | None = None
         self._latest_image: Image     | None = None
 
-        self.get_logger().info('HumanDetectionNode started (skeleton)')
+        self.get_logger().info('HumanDetectionNode started')
 
     # ──────────────────────────────────────────────────────────────────────
     # Callbacks
     # ──────────────────────────────────────────────────────────────────────
 
     def _scan_callback(self, msg: LaserScan):
-        """Called at ~10 Hz with every new LiDAR scan."""
         self._latest_scan = msg
         self._run_detection()
 
     def _image_callback(self, msg: Image):
-        """Called at ~30 Hz with every new camera frame."""
         self._latest_image = msg
-        # TODO (optional): run YOLO here; results can be fused in _run_detection()
 
     # ──────────────────────────────────────────────────────────────────────
-    # Detection pipeline  ← IMPLEMENT THIS
+    # Detection pipeline  ← IMPLEMENT HERE
     # ──────────────────────────────────────────────────────────────────────
 
     def _run_detection(self):
         """
-        Main detection entry point, called whenever a new scan arrives.
-
-        Suggested approaches
-        --------------------
-        LiDAR-only  : leg detector (two circular blobs ~0.3 m apart in scan)
-        Camera-only : YOLOv8 bounding box → depth estimate via known geometry
-        Fusion      : match LiDAR clusters to YOLO detections for robust 3-D pose
-
-        Expected output
-        ---------------
-        A list of (x, y) positions in the *odom* frame.
-        Use self._laser_to_odom(range, angle) to convert a scan hit to odom.
-        Then call self._publish(detections).
+        Called whenever a new scan arrives.
+        Populate detections with (x, y) positions in the odom frame,
+        then call self._publish(detections).
         """
         if self._latest_scan is None:
             return
 
-        # TODO: replace stub with real detection algorithm
-        detections: list[tuple[float, float]] = self._stub_detect()
+        detections: list[tuple[float, float]] = []
+
+        # TODO: implement your detection algorithm here
 
         self._publish(detections)
-
-    def _stub_detect(self) -> list[tuple[float, float]]:
-        """
-        Stub — returns an empty list.
-        Replace with your detection logic; return [(x1,y1), (x2,y2), …].
-        """
-        return []
 
     # ──────────────────────────────────────────────────────────────────────
     # Helper — coordinate conversion
@@ -129,9 +110,9 @@ class HumanDetectionNode(Node):
         Convert a single LiDAR return (range, angle in lidar_link frame) to
         the odom frame.
 
-        NOTE: This stub does NOT apply the lidar_link → odom transform.
-              Implement properly using tf2_ros.Buffer / TransformListener,
-              or use the robot's current odometry pose directly.
+        Implement using tf2_ros.Buffer / TransformListener for the
+        lidar_link → odom transform, or use the robot's current odometry
+        pose directly.
 
         Parameters
         ----------
@@ -163,7 +144,7 @@ class HumanDetectionNode(Node):
             p = Pose()
             p.position.x = x
             p.position.y = y
-            p.position.z = 0.9          # mid-body height
+            p.position.z = 0.9
             p.orientation.w = 1.0
             pose_array.poses.append(p)
         self.pose_pub.publish(pose_array)
@@ -171,7 +152,6 @@ class HumanDetectionNode(Node):
         # --- MarkerArray (cylinders) ---
         marker_array = MarkerArray()
 
-        # Delete old markers first
         delete_all = Marker()
         delete_all.header = header
         delete_all.ns = 'detected_humans'

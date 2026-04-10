@@ -19,7 +19,9 @@ setup(
     license='Apache-2.0',
     entry_points={
         'console_scripts': [
-            'pure_pursuit_node = pure_pursuit.pure_pursuit_node:main',
+            'regulated_pure_pursuit_node = pure_pursuit.pure_pursuit_node:main',
+            'test_path_publisher         = pure_pursuit.test_path_publisher:main',
+            'path_evaluator_node         = pure_pursuit.path_evaluator:main',
         ],
     },
 )
