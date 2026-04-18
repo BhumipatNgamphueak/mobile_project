@@ -10,6 +10,7 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
+        ('share/' + package_name + '/launch', ['launch/costmap_sim.launch.py']),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -20,6 +21,8 @@ setup(
     entry_points={
         'console_scripts': [
             'path_planning_node = path_planning.path_planning_node:main',
+            'local_costmap_node = path_planning.local_costmap_node:main',
+            'global_path_node = path_planning.global_path_node:main',
         ],
     },
 )
