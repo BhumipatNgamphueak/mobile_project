@@ -9,24 +9,15 @@ collision-free path while accounting for detected dynamic obstacles
 Inputs
 ------
 /odom                   nav_msgs/Odometry          robot pose in odom frame
-/goal_pose              geometry_msgs/PoseStamped  target given by operator
-/detected_human_poses   geometry_msgs/PoseArray    dynamic obstacles from human_detection
+
 
 Outputs
 -------
 /planned_path           nav_msgs/Path              sequence of poses for pure_pursuit
-/real_map               nav_msgs/OccupancyGrid     static map of the known environment
 
 Parameters
 ----------
-odom_frame          (str,   default 'odom')
-map_width_m         (float, default 20.0)   world width  [m]
-map_height_m        (float, default 20.0)   world height [m]
-map_resolution      (float, default 0.1)    metres per cell
-robot_radius        (float, default 0.35)   inflation radius around static obstacles [m]
-human_radius        (float, default 0.6)    inflation radius around detected humans [m]
-replan_hz           (float, default 2.0)    replanning frequency [Hz]
-use_sim_time        (bool,  default True)
+
 
 Path contract with pure_pursuit
 --------------------------------
@@ -45,6 +36,9 @@ from geometry_msgs.msg import PoseStamped, PoseArray, Pose, Point
 from std_msgs.msg import Header
 from builtin_interfaces.msg import Time
 
+def euclidean(p1: Pose, p2: Pose) -> float:
+    return math.hypot(p1.position.x - p2.position.x,
+                      p1.position.y - p2.position.y)
 
 class PathPlanningNode(Node):
 
@@ -52,61 +46,40 @@ class PathPlanningNode(Node):
         super().__init__('path_planning_node')
 
         # ── Parameters ────────────────────────────────────────────────────
-        self.declare_parameter('odom_frame',     'odom')
-        self.declare_parameter('map_width_m',    20.0)
-        self.declare_parameter('map_height_m',   20.0)
-        self.declare_parameter('map_resolution', 0.1)
-        self.declare_parameter('robot_radius',   0.35)
-        self.declare_parameter('human_radius',   0.6)
-        self.declare_parameter('replan_hz',      2.0)
+        self.planning_freq = 10 # Hz
+        self.lookahead_dist         = 5.0    # meters — how far ahead to extract
+        self.prune_dist             = 1.0    # meters — prune waypoints behind robot
+        self.min_waypoints_required = 2      # don't publish if too few points
 
-        self.odom_frame     = self.get_parameter('odom_frame').value
-        self.map_width_m    = self.get_parameter('map_width_m').value
-        self.map_height_m   = self.get_parameter('map_height_m').value
-        self.map_resolution = self.get_parameter('map_resolution').value
-        self.robot_radius   = self.get_parameter('robot_radius').value
-        self.human_radius   = self.get_parameter('human_radius').value
-        replan_hz           = self.get_parameter('replan_hz').value
+        # ── TEB parameters ────────────────────────────────────────────────
+        self.teb_n_iter   = 300   # optimisation iterations per replan cycle
+        self.teb_w_obs    = 3.0  # obstacle repulsion weight
+        self.teb_w_smooth = 2.0  # smoothness (elastic) weight
+        self.teb_w_time   = 0.1  # time minimisation weight
+        self.v_max        = 0.5  # m/s — max linear speed (mecanum any direction)
 
         # ── Subscribers ───────────────────────────────────────────────────
         self.odom_sub = self.create_subscription(
             Odometry, '/odom',
             self._odom_callback, 10)
-
-        self.goal_sub = self.create_subscription(
-            PoseStamped, '/goal_pose',
-            self._goal_callback, 10)
-
-        self.human_sub = self.create_subscription(
-            PoseArray, '/detected_human_poses',
-            self._human_callback, 10)
+        self.global_path_sub = self.create_subscription(
+            Path, '/global_path', self._global_path_callback, 10)
+        self.local_costmap_sub = self.create_subscription(
+            OccupancyGrid, '/local_costmap', self._local_costmap_callback, 10)
 
         # ── Publishers ────────────────────────────────────────────────────
         self.path_pub = self.create_publisher(Path, '/planned_path', 10)
 
         # ── Internal state ────────────────────────────────────────────────
-        self._robot_pose:   Pose      | None = None
-        self._goal_pose:    Pose      | None = None
-        self._human_poses:  list[Pose]       = []
-
-        # Static obstacle list (centre_x, centre_y, half_size) in odom frame
-        # odom = world - spawn_offset(-7, 4)
-        self._static_obstacles: list[tuple[float, float, float]] = [
-            ( 4 - (-7),  5 - 4, 1.0),   # obstacle_A  → odom (11,  1)
-            (-4 - (-7), -5 - 4, 1.0),   # obstacle_B  → odom ( 3, -9)
-            ( 2 - (-7), -4 - 4, 1.0),   # obstacle_C  → odom ( 9, -8)
-        ]
+        self._robot_pose: Pose | None = None
+        self._robot_vel = None               # geometry_msgs/Twist (vx, vy, omega)
+        self._global_path: Path | None = None
+        self._local_costmap: OccupancyGrid | None = None
+        self._prune_index: int = 0           # ← tracks how far we've consumed
 
         # ── Replanning timer ──────────────────────────────────────────────
         self._replan_timer = self.create_timer(
-            1.0 / replan_hz, self._replan)
-
-        # Publish static map once at startup (latched via transient_local QoS)
-        from rclpy.qos import QoSProfile, DurabilityPolicy
-        map_qos = QoSProfile(depth=1,
-                             durability=DurabilityPolicy.TRANSIENT_LOCAL)
-        self.map_pub = self.create_publisher(OccupancyGrid, '/real_map', map_qos)
-        self._publish_static_map()
+            1.0 / self.planning_freq, self._replan)
 
         self.get_logger().info('PathPlanningNode started')
 
@@ -116,115 +89,230 @@ class PathPlanningNode(Node):
 
     def _odom_callback(self, msg: Odometry):
         self._robot_pose = msg.pose.pose
+        self._robot_vel  = msg.twist.twist
 
-    def _goal_callback(self, msg: PoseStamped):
-        self._goal_pose = msg.pose
-        self.get_logger().info(
-            f'New goal: ({msg.pose.position.x:.2f}, {msg.pose.position.y:.2f})')
-        self._replan()
+    def _local_costmap_callback(self, msg:OccupancyGrid):
+        self._local_costmap = msg
 
-    def _human_callback(self, msg: PoseArray):
-        self._human_poses = msg.poses
+    def _global_path_callback(self, msg: Path):
+        """
+        Called every time a new global path arrives.
+        Reset the prune index so we start consuming from the beginning.
+        """
+        self._global_path = msg
+        self._prune_index = 0
+        self.get_logger().info(f'New global path received: {len(msg.poses)} waypoints')
 
+    
     # ──────────────────────────────────────────────────────────────────────
-    # Planning pipeline  ← IMPLEMENT HERE
+    # Planning 
     # ──────────────────────────────────────────────────────────────────────
-
+    
     def _replan(self):
-        """
-        Called at replan_hz and immediately on every new goal.
-
-        Use self._robot_pose, self._goal_pose, self._human_poses,
-        self._static_obstacles, and self.map_resolution / map_width_m /
-        map_height_m to compute a path.
-
-        Publish the result with self.path_pub.publish(path).
-        """
-        if self._robot_pose is None or self._goal_pose is None:
+        # Guard: wait until all inputs are ready
+        if self._robot_pose is None or self._global_path is None or self._local_costmap is None:
+            return
+        if len(self._global_path.poses) < self.min_waypoints_required:
             return
 
-        path = self._plan()
-        if path is not None:
-            self.path_pub.publish(path)
+        # Advance prune index to robot's current position on global path
+        closest_idx = self._find_closest_index()
+        self._prune_passes_waypoints(closest_idx)
 
-    def _plan(self) -> Path | None:
-        """
-        Implement your planning algorithm here.
+        # Extract the relevant slice of the global path ahead of the robot
+        local_segment = self._extract_local_segment()
+        if len(local_segment) < self.min_waypoints_required:
+            return
 
-        Returns a nav_msgs/Path with header.frame_id = 'odom',
-        or None if no path is found.
-        """
-        # TODO: implement your algorithm
-        return None
+        # TEB: deform local_segment to avoid obstacles and minimise time
+        optimized = self._teb_optimize(local_segment)
+
+        # Publish the optimised path for pure_pursuit
+        path_msg = Path()
+        path_msg.header.stamp    = self.get_clock().now().to_msg()
+        path_msg.header.frame_id = 'odom'
+        path_msg.poses = optimized
+        self.path_pub.publish(path_msg)
 
     # ──────────────────────────────────────────────────────────────────────
-    # Static map publisher
+    # Helper
     # ──────────────────────────────────────────────────────────────────────
-
-    def _publish_static_map(self):
+    def _costmap_cost(self, x: float, y: float) -> float:
         """
-        Build and publish an OccupancyGrid of the known static world.
+        Return obstacle penalty [0–1] at odom-frame position (x, y).
 
-        Map covers world [-10, 10] → odom x∈[-3, 17], y∈[-14, 6].
-        Obstacles and walls are inflated by robot_radius.
+        0   = free space (raw cost ≤ 20)
+        0–1 = inflated zone (raw cost 20–100)
+        1   = lethal obstacle (raw cost 100)
+
+        The local costmap is built in the robot/laser frame (centred on the
+        robot), so we must transform odom → robot frame before indexing.
         """
-        res = self.map_resolution
-        w_cells = int(self.map_width_m  / res)
-        h_cells = int(self.map_height_m / res)
+        if self._local_costmap is None or self._robot_pose is None:
+            return 0.0
 
-        # Map origin in odom frame (bottom-left corner of cell 0,0)
-        # world(-10,-10) → odom: x=-10-(-7)=-3, y=-10-4=-14
-        origin_x = -3.0
-        origin_y = -14.0
+        # Extract robot yaw from quaternion (rotation around z-axis only)
+        qz  = self._robot_pose.orientation.z
+        qw  = self._robot_pose.orientation.w
+        yaw = 2.0 * math.atan2(qz, qw)
 
-        data = [0] * (w_cells * h_cells)
+        # Translate then rotate: odom → robot frame
+        dx = x - self._robot_pose.position.x
+        dy = y - self._robot_pose.position.y
+        lx =  dx * math.cos(yaw) + dy * math.sin(yaw)
+        ly = -dx * math.sin(yaw) + dy * math.cos(yaw)
 
-        def mark_box(cx_odom, cy_odom, half_x, half_y, inflate):
-            lo_x = cx_odom - half_x - inflate
-            hi_x = cx_odom + half_x + inflate
-            lo_y = cy_odom - half_y - inflate
-            hi_y = cy_odom + half_y + inflate
-            for gx in range(w_cells):
-                wx = origin_x + gx * res
-                if wx < lo_x or wx > hi_x:
-                    continue
-                for gy in range(h_cells):
-                    wy = origin_y + gy * res
-                    if wy < lo_y or wy > hi_y:
-                        continue
-                    data[gy * w_cells + gx] = 100
+        # Robot-frame (lx, ly) → grid cell indices
+        info = self._local_costmap.info
+        gx = int((lx - info.origin.position.x) / info.resolution)
+        gy = int((ly - info.origin.position.y) / info.resolution)
 
-        # Boundary walls
-        wall_half  = 10.0
-        wall_thick = 0.1 + self.robot_radius
-        for cx_odom, cy_odom, half_x, half_y in [
-            ( 7.0,   6.0, wall_half,  wall_thick),   # north
-            ( 7.0, -14.0, wall_half,  wall_thick),   # south
-            ( 17.0,  -4.0, wall_thick, wall_half),   # east
-            ( -3.0,  -4.0, wall_thick, wall_half),   # west
-        ]:
-            mark_box(cx_odom, cy_odom, half_x, half_y, 0.0)
+        if not (0 <= gx < info.width and 0 <= gy < info.height):
+            return 0.0  # outside costmap window → assume free
 
-        # Static obstacles
-        for cx, cy, hs in self._static_obstacles:
-            mark_box(cx, cy, hs, hs, self.robot_radius)
+        raw = float(max(0, self._local_costmap.data[gy * info.width + gx]))
+        threshold = 20.0
+        if raw <= threshold:
+            return 0.0
+        return (raw - threshold) / (100.0 - threshold)  # normalised to [0, 1]
 
+    def _teb_optimize(self, segment: list[PoseStamped]) -> list[PoseStamped]:
+        """
+        Timed Elastic Band optimisation.
+
+        Each iteration does two things:
+          A) Elastic band — move intermediate waypoints to
+               - reduce obstacle cost  (repulsion from obstacles)
+               - stay smooth           (attraction toward midpoint of neighbours)
+          B) Time adjustment — shrink each dt interval as fast as the
+               velocity limit allows
+
+        Start and goal waypoints are held fixed throughout.
+        """
+        n = len(segment)
+        if n < 2:
+            return segment
+
+        # Mutable copies of waypoint positions (start/end will stay fixed)
+        xs = [p.pose.position.x for p in segment]
+        ys = [p.pose.position.y for p in segment]
+
+        # Initial time intervals: dist / v_max gives the fastest feasible dt
+        dts = []
+        for i in range(n - 1):
+            dist = math.hypot(xs[i + 1] - xs[i], ys[i + 1] - ys[i])
+            dts.append(max(0.05, dist / self.v_max))
+
+        step      = 0.05  # position update step size
+        eps       = 0.15  # must be > costmap resolution (0.1 m) to sample different cells
+        max_delta = 0.1   # max waypoint movement per iteration (m) — prevents explosion
+
+        for _ in range(self.teb_n_iter):
+
+            # ── A. Update intermediate waypoint positions ──────────────
+            for i in range(1, n - 1):   # index 0 and n-1 are fixed
+
+                # Obstacle repulsion — numerical gradient of normalised cost [0,1]
+                # eps > cell size ensures the two samples land in different cells
+                c_px = self._costmap_cost(xs[i] + eps, ys[i])
+                c_mx = self._costmap_cost(xs[i] - eps, ys[i])
+                c_py = self._costmap_cost(xs[i],       ys[i] + eps)
+                c_my = self._costmap_cost(xs[i],       ys[i] - eps)
+                grad_obs_x = (c_px - c_mx) / (2.0 * eps)
+                grad_obs_y = (c_py - c_my) / (2.0 * eps)
+
+                # Smoothness — pull waypoint toward midpoint of its neighbours
+                f_smooth_x = (xs[i - 1] + xs[i + 1]) / 2.0 - xs[i]
+                f_smooth_y = (ys[i - 1] + ys[i + 1]) / 2.0 - ys[i]
+
+                # Combined update: repel from obstacles, attract to smooth line
+                delta_x = step * (-self.teb_w_obs * grad_obs_x + self.teb_w_smooth * f_smooth_x)
+                delta_y = step * (-self.teb_w_obs * grad_obs_y + self.teb_w_smooth * f_smooth_y)
+
+                # Clamp movement magnitude to keep optimisation stable
+                mag = math.hypot(delta_x, delta_y)
+                if mag > max_delta:
+                    delta_x = delta_x * max_delta / mag
+                    delta_y = delta_y * max_delta / mag
+
+                xs[i] += delta_x
+                ys[i] += delta_y
+
+            # ── B. Adjust time intervals ───────────────────────────────
+            for i in range(n - 1):
+                dist   = math.hypot(xs[i + 1] - xs[i], ys[i + 1] - ys[i])
+                dt_min = dist / self.v_max          # kinematic lower bound
+                # Time cost shrinks dt; kinematic constraint floors it
+                dts[i] = max(dt_min, dts[i] - self.teb_w_time * step)
+
+        # Rebuild PoseStamped list with forward-facing orientation
         stamp = self.get_clock().now().to_msg()
-        grid = OccupancyGrid()
-        grid.header = Header(frame_id=self.odom_frame, stamp=stamp)
-        grid.info = MapMetaData(
-            map_load_time=stamp,
-            resolution=res,
-            width=w_cells,
-            height=h_cells,
-        )
-        grid.info.origin.position.x = origin_x
-        grid.info.origin.position.y = origin_y
-        grid.info.origin.orientation.w = 1.0
-        grid.data = data
+        frame = segment[0].header.frame_id
+        result = []
+        for i in range(n):
+            # Heading: direction from previous to next waypoint
+            theta = math.atan2(
+                ys[min(i + 1, n - 1)] - ys[max(i - 1, 0)],
+                xs[min(i + 1, n - 1)] - xs[max(i - 1, 0)]
+            )
+            ps = PoseStamped()
+            ps.header.frame_id    = frame
+            ps.header.stamp       = stamp
+            ps.pose.position.x    = xs[i]
+            ps.pose.position.y    = ys[i]
+            ps.pose.orientation.z = math.sin(theta / 2.0)
+            ps.pose.orientation.w = math.cos(theta / 2.0)
+            result.append(ps)
+        return result
 
-        self.map_pub.publish(grid)
-        self.get_logger().info('Static map published on /real_map')
+    def _find_closest_index(self) -> int:
+        """
+        Find the index in the global path closest to the robot,
+        starting from the current prune index (never go backwards).
+
+        Global path:   0──1──2──3──[4]──5──6──7──8
+                                    ↑
+                               closest index
+        """
+        waypoints = self._global_path.poses
+
+        closest_idx = self._prune_index
+        closest_dist = float('inf')
+
+        # Loop all waypoints from the current prune index
+        for i in range(self._prune_index, len(waypoints)):
+            d = euclidean(self._robot_pose, waypoints[i].pose)
+            if d < closest_dist:
+                closest_dist = d
+                closest_idx = i
+        return closest_idx
+
+    def _prune_passes_waypoints(self, closest_idx: int):
+        """
+        Prune the robot path, start planning at closest point in global path
+        Before:  0──1──2──[Robot]──3──4──5
+        After:   prune_index moves to 3
+        """
+        self._prune_index = closest_idx
+    
+    def _extract_local_segment(self) -> list[PoseStamped]:
+        """
+        Extract waypoints within lookahead_dist from the robot, starting from prune_index.
+        Global path:  ...──[prune]──A──B──C──D──E──...
+                                    |←── lookahead ──→|
+        Local segment return:       A──B──C──D
+        """
+        waypoints = self._global_path.poses
+        local_segment = []
+
+        for i in range(self._prune_index, len(waypoints)):
+            d = euclidean(self._robot_pose, waypoints[i].pose)
+            if d <= self.lookahead_dist:
+                local_segment.append(waypoints[i])
+            else:
+                break  # waypoints are ordered, no need to continue
+
+        return local_segment
 
 
 def main(args=None):
