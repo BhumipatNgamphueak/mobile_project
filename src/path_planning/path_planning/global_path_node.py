@@ -39,7 +39,7 @@ class GlobalPathNode(Node):
         self._robot_y = msg.pose.pose.position.y
 
     def goal_callback(self, msg: PoseStamped):
-        self.get_logger().info(f"Received new goal: x={msg.pose.position.x:.2f}, y={msg.pose.position.y:.2f}")
+        # self.get_logger().info(f"Received new goal: x={msg.pose.position.x:.2f}, y={msg.pose.position.y:.2f}")
 
         path_msg = Path()
         path_msg.header.stamp = self.get_clock().now().to_msg()
@@ -71,6 +71,7 @@ class GlobalPathNode(Node):
         # Give the final pose the exact target orientation
         path_msg.poses[-1].pose.orientation = msg.pose.orientation
         self.goal_msg = path_msg
+        self.path_pub.publish(self.goal_msg)  # publish immediately — don't wait for timer
             
 
     def global_path_timer_callback(self):
