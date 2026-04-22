@@ -53,7 +53,7 @@ class PathPlanningNode(Node):
         self.teb_w_obs    = 3.0   # obstacle repulsion weight
         self.teb_w_smooth = 2.0   # smoothness (elastic band) weight
         self.teb_w_time   = 0.1   # time-minimisation weight
-        self.v_max        = 0.5   # m/s — mecanum max linear speed
+        self.v_max        = 1.5   # m/s — mecanum max linear speed
 
         # ── Subscribers ───────────────────────────────────────────────────
         self.odom_sub = self.create_subscription(
@@ -96,17 +96,22 @@ class PathPlanningNode(Node):
         self._local_costmap = msg
 
     def _global_path_callback(self, msg: Path):
-        # Compare goal (last waypoint) to detect a genuinely new destination.
-        # The global_path_node re-publishes the same path every second, so
-        # without this check the warm state and prune index get wiped every
-        # second, destroying TEB's warm start and causing jitter.
         if self._global_path is not None and len(msg.poses) > 0:
+            # Ignore exact same message republished by timer
+            if (msg.header.stamp.sec == self._global_path.header.stamp.sec and
+                msg.header.stamp.nanosec == self._global_path.header.stamp.nanosec):
+                return
+                
             new_goal = msg.poses[-1].pose.position
             old_goal = self._global_path.poses[-1].pose.position
             same_goal = (abs(new_goal.x - old_goal.x) < 0.01 and
                          abs(new_goal.y - old_goal.y) < 0.01)
             if same_goal:
-                self._global_path = msg   # update path geometry, keep state
+                # Path changed geometrically but goal is the same (e.g. replanning).
+                # Reset prune_index so we find the correct closest point on the new path,
+                # but KEEP warm state (Euclidean matching handles it safely) to avoid jitter.
+                self._global_path = msg
+                self._prune_index = 0
                 return
 
         # New goal → full reset so TEB starts fresh from the new reference path
@@ -123,13 +128,16 @@ class PathPlanningNode(Node):
     def _replan(self):
         if self._robot_pose is None or self._global_path is None \
                 or self._local_costmap is None:
+            print("No Data")
             return
         if len(self._global_path.poses) < self.min_waypoints_required:
+            print("No Enough Point")
             return
 
         # Goal reached → stop
         goal_pose = self._global_path.poses[-1].pose
         if euclidean(self._robot_pose, goal_pose) < self.goal_tolerance:
+            print("Reach Goal")
             self._pub_stop()
             return
 
@@ -265,17 +273,11 @@ class PathPlanningNode(Node):
                          opt_xs: list[float],
                          opt_ys: list[float]) -> TwistStamped:
         """
-        Holonomic Pure Pursuit for mecanum — produces vx, vy, omega.
-
-        Follows the same logic as nav2 Regulated Pure Pursuit (RPP) but runs
-        inline so no separate controller node is needed:
-
-          vx    = forward speed (regulated by goal distance)
-          vy    = lateral correction  k_lat × cross-track error in body frame
-          omega = pure-pursuit curvature rule  v × κ,  κ = 2·y_L / L²
-
-        where y_L is the signed lateral offset of the lookahead point in the
-        robot body frame and L is the lookahead distance.
+        Strict Holonomic Velocity Extraction — produces vx, vy, omega.
+        
+        Instead of using Pure Pursuit curvature to steer the nose, this draws a 
+        direct vector to the lookahead point in the robot's body frame and applies 
+        linear velocity along that exact vector (sliding).
         """
         cmd = TwistStamped()
         cmd.header.stamp    = self.get_clock().now().to_msg()
@@ -292,7 +294,7 @@ class PathPlanningNode(Node):
         cos_y = math.cos(yaw)
         sin_y = math.sin(yaw)
 
-        # ── Select lookahead point (Pure Pursuit step) ─────────────────
+        # ── 1. Select lookahead point ──────────────────────────────────
         lookahead = 0.5   # m
         tx, ty = opt_xs[-1], opt_ys[-1]
         for ox, oy in zip(opt_xs, opt_ys):
@@ -300,32 +302,30 @@ class PathPlanningNode(Node):
                 tx, ty = ox, oy
                 break
 
-        # ── Transform lookahead point to robot body frame ───────────────
+        # ── 2. Transform lookahead point to robot body frame ───────────
         dx_w = tx - rx
         dy_w = ty - ry
-        xl   =  dx_w * cos_y + dy_w * sin_y   # forward component
-        yl   = -dx_w * sin_y + dy_w * cos_y   # lateral component (signed cross-track)
-        L    = math.hypot(xl, yl)
+        xl   =  dx_w * cos_y + dy_w * sin_y   # Forward distance to target
+        yl   = -dx_w * sin_y + dy_w * cos_y   # Lateral distance to target
+        L    = math.hypot(xl, yl)             # Direct distance to lookahead
+        
         if L < 1e-6:
             return cmd
 
-        # ── Pure Pursuit curvature: κ = 2·y_L / L² ─────────────────────
-        kappa = 2.0 * yl / (L * L)
-
-        # ── Forward speed: decelerate near goal ─────────────────────────
+        # ── 3. Forward speed: decelerate near goal ─────────────────────
         goal   = self._global_path.poses[-1].pose
         d_goal = euclidean(self._robot_pose, goal)
-        vx     = min(self.v_max, max(0.05, d_goal * 0.8))
+        v_target = min(self.v_max, max(0.05, d_goal * 1.5))
 
-        # ── Lateral correction (mecanum holonomic feature) ──────────────
-        # vy corrects cross-track error without needing to rotate first
-        k_lat  = 0.5
-        v_y_max = 0.3   # m/s
-        vy = max(-v_y_max, min(v_y_max, k_lat * yl))
+        # ── 4. Holonomic Velocity Distribution ─────────────────────────
+        # Normalize the body-frame vector (xl, yl) and multiply by target speed.
+        # This makes the robot slide directly toward the point.
+        vx = v_target * (xl / L)
+        vy = v_target * (yl / L)
 
-        # ── Angular velocity: pure pursuit rule ─────────────────────────
-        omega_max = 1.5   # rad/s
-        omega = max(-omega_max, min(omega_max, vx * kappa))
+        # ── 5. Angular velocity (Yaw) ──────────────────────────────────
+        # Holonomic robots can slide. User requested pure lateral movement without yawing.
+        omega = 0.0
 
         cmd.twist.linear.x  = vx
         cmd.twist.linear.y  = vy
@@ -386,7 +386,7 @@ class PathPlanningNode(Node):
         stamp = self.get_clock().now().to_msg()
         path_msg = Path()
         path_msg.header.stamp    = stamp
-        path_msg.header.frame_id = 'odom'
+        path_msg.header.frame_id = frame
         for i in range(n):
             theta = math.atan2(
                 ys[min(i+1, n-1)] - ys[max(i-1, 0)],

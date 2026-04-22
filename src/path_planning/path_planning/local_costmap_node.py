@@ -24,7 +24,7 @@ class LocalCostMapNode(Node):
         self.height_cells = 250
         
         # Max cost clamped to 100  because ROS OccupancyGrid max value is 127 (values >100 are ignored or crash)
-        self.obstacle_cost = min(100, 200)
+        self.obstacle_cost = 100
         self.inflation_radius = 1.0  # meters
         
         # Precompute inflation kernel

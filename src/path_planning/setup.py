@@ -26,6 +26,7 @@ setup(
             'path_planning_node = path_planning.path_planning_node:main',
             'local_costmap_node = path_planning.local_costmap_node:main',
             'global_path_node = path_planning.global_path_node:main',
+            'test_cmd_vel_node = path_planning.test_cmd_vel_node:main',
         ],
     },
 )
