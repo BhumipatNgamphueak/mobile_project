@@ -175,11 +175,11 @@
     ═══════════════════════════════════════════════════ -->
     <actor name="human_1">
       <skin>
-        <filename>/home/talaeja/.ignition/fuel/fuel.gazebosim.org/mingfei/models/actor/1/meshes/walk.dae</filename>
+        <filename>/home/pavaris/.ignition/fuel/fuel.gazebosim.org/mingfei/models/actor/1/meshes/walk.dae</filename>
         <scale>1.0</scale>
       </skin>
       <animation name="walk">
-        <filename>/home/talaeja/.ignition/fuel/fuel.gazebosim.org/mingfei/models/actor/1/meshes/walk.dae</filename>
+        <filename>/home/pavaris/.ignition/fuel/fuel.gazebosim.org/mingfei/models/actor/1/meshes/walk.dae</filename>
         <interpolate_x>true</interpolate_x>
       </animation>
       <script>
@@ -209,11 +209,11 @@
     ═══════════════════════════════════════════════════ -->
     <actor name="human_2">
       <skin>
-        <filename>/home/talaeja/.ignition/fuel/fuel.gazebosim.org/mingfei/models/actor/1/meshes/walk.dae</filename>
+        <filename>/home/pavaris/.ignition/fuel/fuel.gazebosim.org/mingfei/models/actor/1/meshes/walk.dae</filename>
         <scale>1.0</scale>
       </skin>
       <animation name="walk">
-        <filename>/home/talaeja/.ignition/fuel/fuel.gazebosim.org/mingfei/models/actor/1/meshes/walk.dae</filename>
+        <filename>/home/pavaris/.ignition/fuel/fuel.gazebosim.org/mingfei/models/actor/1/meshes/walk.dae</filename>
         <interpolate_x>true</interpolate_x>
       </animation>
       <script>

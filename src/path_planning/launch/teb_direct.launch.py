@@ -174,6 +174,6 @@ def generate_launch_description():
         gz_pose_odom,
         local_costmap_node,
         global_path_node,
-        path_planning_node,
+        # path_planning_node,
         rviz_node,
     ])
