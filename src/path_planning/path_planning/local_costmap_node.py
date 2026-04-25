@@ -2,94 +2,120 @@ import array
 import math
 import rclpy
 from rclpy.node import Node
+from rclpy.duration import Duration
+import tf2_ros
+from tf2_ros import TransformException
 
-from nav_msgs.msg import Odometry, Path, OccupancyGrid, MapMetaData
-from geometry_msgs.msg import PoseStamped, PoseArray, Pose, Point
-from std_msgs.msg import Header
-from builtin_interfaces.msg import Time
+from nav_msgs.msg import OccupancyGrid
 from sensor_msgs.msg import LaserScan
+
 
 class LocalCostMapNode(Node):
     def __init__(self):
-        super().__init__('local_costmap_node')
+        super().__init__('local_costmap')
+
+        self.declare_parameter('resolution', 0.05)
+        self.declare_parameter('width', 15.0)           # meters
+        self.declare_parameter('height', 15.0)          # meters
+        self.declare_parameter('robot_base_frame', 'base_link')
+        self.declare_parameter('global_frame', 'odom')
+        self.declare_parameter('inflation_radius', 0.55)
+        self.declare_parameter('cost_scaling_factor', 10.0)
+
+        self.resolution = self.get_parameter('resolution').value
+        width_m = self.get_parameter('width').value
+        height_m = self.get_parameter('height').value
+        self.robot_base_frame = self.get_parameter('robot_base_frame').value
+        self.global_frame = self.get_parameter('global_frame').value
+        self.inflation_radius = self.get_parameter('inflation_radius').value
+        self.cost_scaling_factor = self.get_parameter('cost_scaling_factor').value
+
+        self.width_cells = int(width_m / self.resolution)
+        self.height_cells = int(height_m / self.resolution)
+
+        self.tf_buffer = tf2_ros.Buffer()
+        self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
 
         self.scan_sub = self.create_subscription(
-            LaserScan, '/scan',
-            self._scan_callback, 10)
-        self.cost_map_pub = self.create_publisher(OccupancyGrid, '/local_costmap', 10)
+            LaserScan, '/scan', self._scan_callback, 10)
+        self.costmap_pub = self.create_publisher(
+            OccupancyGrid, '/local_costmap', 10)
 
-        # Cost map param
-        self.costmap_resolution = 0.1
-        self.width_cells = 250
-        self.height_cells = 250
-        
-        # Max cost clamped to 100  because ROS OccupancyGrid max value is 127 (values >100 are ignored or crash)
-        self.obstacle_cost = 100
-        self.inflation_radius = 1.0  # meters
-        
-        # Precompute inflation kernel
+        self._build_inflation_kernel()
+
+    def _build_inflation_kernel(self):
         self.inflation_kernel = []
-        inflation_cells = int(self.inflation_radius / self.costmap_resolution)
+        inflation_cells = int(self.inflation_radius / self.resolution)
         for dx in range(-inflation_cells, inflation_cells + 1):
             for dy in range(-inflation_cells, inflation_cells + 1):
-                dist = math.hypot(dx, dy) * self.costmap_resolution
+                dist = math.hypot(dx, dy) * self.resolution
                 if dist <= self.inflation_radius:
                     if dist == 0.0:
-                        cost = self.obstacle_cost
+                        cost = 100
                     else:
-                        cost = max(1, int(self.obstacle_cost * (1.0 - (dist / self.inflation_radius))))
+                        # Nav2-style exponential decay
+                        factor = math.exp(-self.cost_scaling_factor * dist)
+                        cost = max(1, int(100 * factor))
                     self.inflation_kernel.append((dx, dy, cost))
-        
+
     def _scan_callback(self, msg: LaserScan):
-        self.get_logger().info(f'Scan received: {len(msg.ranges)} ranges')
-        # Set header
+        # Lookup transform: scan frame -> global frame (odom)
+        try:
+            tf = self.tf_buffer.lookup_transform(
+                self.global_frame,
+                msg.header.frame_id,
+                rclpy.time.Time(),
+                timeout=Duration(seconds=0.1))
+        except TransformException as e:
+            self.get_logger().warn(f'TF lookup failed: {e}')
+            return
+
+        tx = tf.transform.translation.x
+        ty = tf.transform.translation.y
+        q = tf.transform.rotation
+        yaw = math.atan2(2.0 * (q.w * q.z + q.x * q.y),
+                         1.0 - 2.0 * (q.y * q.y + q.z * q.z))
+
+        # Rolling window: origin tracks robot position in odom frame
         grid = OccupancyGrid()
-        grid.header = msg.header
-        grid.info.resolution = self.costmap_resolution
+        grid.header.stamp = msg.header.stamp
+        grid.header.frame_id = self.global_frame
+        grid.info.resolution = self.resolution
         grid.info.width = self.width_cells
         grid.info.height = self.height_cells
-
-        # Set center of costmap to robot position
-        grid.info.origin.position.x = -(self.width_cells * self.costmap_resolution) / 2.0
-        grid.info.origin.position.y = -(self.height_cells * self.costmap_resolution) / 2.0
+        grid.info.origin.position.x = tx - (self.width_cells * self.resolution) / 2.0
+        grid.info.origin.position.y = ty - (self.height_cells * self.resolution) / 2.0
         grid.info.origin.position.z = 0.0
 
-        # Initialize the grid with 0 (Free Space). -1 is Unknown, 100 is Lethal Obstacle.
         grid_data = [0] * (self.width_cells * self.height_cells)
-        
-        current_angle = msg.angle_min # first scan
-        
-        # Keep track of obstacle cells to avoid redundancy
         obstacle_cells = set()
 
+        current_angle = msg.angle_min
         for r in msg.ranges:
             if msg.range_min < r < msg.range_max:
-                # Convert to catesian
-                x = r*math.cos(current_angle)
-                y = r*math.sin(current_angle)
+                # Rotate scan point from scan frame into global frame
+                lx = r * math.cos(current_angle)
+                ly = r * math.sin(current_angle)
+                gx = tx + lx * math.cos(yaw) - ly * math.sin(yaw)
+                gy = ty + lx * math.sin(yaw) + ly * math.cos(yaw)
 
-                # offset grid to robot center
-                grid_x = int((x - grid.info.origin.position.x) / self.costmap_resolution)
-                grid_y = int((y - grid.info.origin.position.y) / self.costmap_resolution)
-                
-                if 0 <= grid_x < self.width_cells and 0 <= grid_y < self.height_cells:
-                    obstacle_cells.add((grid_x, grid_y))
+                cx = int((gx - grid.info.origin.position.x) / self.resolution)
+                cy = int((gy - grid.info.origin.position.y) / self.resolution)
+
+                if 0 <= cx < self.width_cells and 0 <= cy < self.height_cells:
+                    obstacle_cells.add((cx, cy))
             current_angle += msg.angle_increment
 
-        # Inflate obstacles using precomputed kernel
         for ox, oy in obstacle_cells:
             for dx, dy, cost in self.inflation_kernel:
-                nx = ox + dx
-                ny = oy + dy
+                nx, ny = ox + dx, oy + dy
                 if 0 <= nx < self.width_cells and 0 <= ny < self.height_cells:
-                    index = (ny * self.width_cells) + nx
-                    if grid_data[index] < cost:
-                        grid_data[index] = cost
+                    idx = ny * self.width_cells + nx
+                    if grid_data[idx] < cost:
+                        grid_data[idx] = cost
 
-        # Convert python list to C-type array to bypass slow rclpy bounds checking
         grid.data = array.array('b', grid_data)
-        
-        self.cost_map_pub.publish(grid)
+        self.costmap_pub.publish(grid)
 
 
 def main(args=None):

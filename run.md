@@ -6,6 +6,9 @@ ros2 launch path_planning costmap_sim.launch.py
 # Run global path
 ros2 run path_planning global_path_node
 
+# Run TEB
+ros2 launch path_planning teb_direct.launch.py
+
 # Test goal -> alternative way is push the 2D Nav Goal in RViz
 ros2 topic pub --once /goal_pose geometry_msgs/msg/PoseStamped "{
   header: {
