@@ -56,7 +56,7 @@ class PathPlanningNode(Node):
 
         # ── General parameters ────────────────────────────────────────────
         self.planning_freq          = 10     # Hz
-        self.lookahead_dist         = 10.0   # m — local segment length
+        self.lookahead_dist         = 15.0   # m — local segment length
         self.min_waypoints_required = 2
         self.goal_tolerance         = 0.4    # m
 
@@ -64,7 +64,7 @@ class PathPlanningNode(Node):
         self.teb_n_iter      = 60      # gradient descent iterations / cycle
         self.teb_w_obs       = 50.0 # 50.0    # obstacle repulsion weight
         self.teb_w_smooth    = 2.0     # elastic band weight
-        self.teb_inflation   = 1.5 # 0.5     # m — repulsion radius around polygons
+        self.teb_inflation   = 1.0 # 0.5     # m — repulsion radius around polygons
         self.teb_step        = 0.05    # gradient step
         self.teb_max_delta   = 0.10    # m — clamp per-iteration movement
         self.v_max           = 1.5     # m/s
@@ -371,6 +371,77 @@ class PathPlanningNode(Node):
         return best_d, best_x, best_y, inside
 
     # ──────────────────────────────────────────────────────────────────────
+    # Homotopy pre-routing
+    # ──────────────────────────────────────────────────────────────────────
+
+    def _preroute_around_polygons(self,
+                                  xs: list[float],
+                                  ys: list[float]) -> None:
+        """
+        For each polygon containing band nodes, displace the affected
+        nodes to one consistent side of the polygon (the side with the
+        shorter perpendicular detour). This forces the band into a valid
+        homotopy class so the local optimiser doesn't have to choose
+        between left/right under symmetric obstacle forces.
+
+        nav2 TEB does this implicitly by exploring multiple homotopy
+        classes in parallel; here we approximate it with a single, stable
+        choice per polygon per cycle.
+        """
+        n = len(xs)
+        if n < 3:
+            return
+
+        for poly in self._polygons:
+            if len(poly) < 3:
+                continue
+
+            # Find interior band nodes inside this polygon (skip endpoints).
+            inside_idx = []
+            for i in range(1, n - 1):
+                _, _, _, inside = self._point_polygon_signed_dist(xs[i], ys[i], poly)
+                if inside:
+                    inside_idx.append(i)
+            if not inside_idx:
+                continue
+
+            i_first = inside_idx[0]
+            i_last  = inside_idx[-1]
+            i_pre   = max(0,     i_first - 1)
+            i_post  = min(n - 1, i_last  + 1)
+
+            # Band direction across the polygon.
+            bx = xs[i_post] - xs[i_pre]
+            by = ys[i_post] - ys[i_pre]
+            bm = math.hypot(bx, by)
+            if bm < 1e-6:
+                continue
+            bx, by = bx / bm, by / bm
+
+            # Perpendicular candidates: (-by, bx) and (by, -bx).
+            # Reference point: midpoint between first and last inside nodes.
+            cxr = (xs[i_first] + xs[i_last]) / 2.0
+            cyr = (ys[i_first] + ys[i_last]) / 2.0
+
+            max_left  = 0.0   # extent in direction (-by, bx)
+            max_right = 0.0   # extent in direction ( by,-bx)
+            for vx, vy in poly:
+                d_left  = (vx - cxr) * (-by) + (vy - cyr) * bx
+                d_right = (vx - cxr) * by   + (vy - cyr) * (-bx)
+                if d_left  > max_left:  max_left  = d_left
+                if d_right > max_right: max_right = d_right
+
+            if max_left <= max_right:
+                perp_x, perp_y, extent = -by, bx, max_left
+            else:
+                perp_x, perp_y, extent =  by, -bx, max_right
+
+            offset = extent + self.teb_inflation + 0.1
+            for i in inside_idx:
+                xs[i] += offset * perp_x
+                ys[i] += offset * perp_y
+
+    # ──────────────────────────────────────────────────────────────────────
     # TEB optimisation
     # ──────────────────────────────────────────────────────────────────────
 
@@ -380,30 +451,79 @@ class PathPlanningNode(Node):
         """
         Elastic band optimisation against polygon obstacles.
 
-        Each interior node is updated with two forces, identical in role to
-        the corresponding TEB g2o edges:
-          - obstacle edge   -> push out of polygon inflation zone
-          - velocity/elastic -> pull toward midpoint of neighbours (smoothing)
-        Endpoints (start, goal) are fixed. Per-iteration motion is clamped
-        so the band cannot teleport across narrow gaps.
+        Anchoring:
+          The band is anchored at the *actual* robot pose (xs[0]) — not at
+          the closest global-path waypoint. This matters when the robot has
+          deviated laterally to avoid an obstacle: anchoring at the global
+          path would put xs[0] inside the inflation zone and the smoothness
+          force would keep dragging the band back into the obstacle.
+
+        Warm start:
+          Across cycles the previous solution is re-projected onto the new
+          band by *arc-length* parameterisation, not nearest-neighbour. This
+          preserves the avoidance shape even when the lateral deviation is
+          larger than the global-path waypoint spacing — preventing the
+          left/right flip-flop that produces in-and-out motion.
+
+        Endpoints (start = robot, end = lookahead goal) are fixed; only
+        interior nodes move. Per-iteration motion is clamped so the band
+        cannot teleport across narrow gaps.
         """
-        n = len(segment)
-        xs = [p.pose.position.x for p in segment]
-        ys = [p.pose.position.y for p in segment]
+        rx = self._robot_pose.position.x
+        ry = self._robot_pose.position.y
+
+        # Initial band: robot pose + global-path waypoints.
+        # Skip waypoints that would create a degenerate first segment.
+        xs = [rx]
+        ys = [ry]
+        skip_dist = 0.4
+        for p in segment:
+            px, py = p.pose.position.x, p.pose.position.y
+            if math.hypot(px - xs[-1], py - ys[-1]) > skip_dist:
+                xs.append(px)
+                ys.append(py)
+
+        n = len(xs)
         if n < 2:
             return xs, ys
 
-        # ── Warm start: snap interior nodes to closest previous waypoint ──
-        if self._warm_xs and self._warm_ys:
-            for i in range(1, n - 1):
-                best_d = float('inf')
-                bx, by = xs[i], ys[i]
-                for wx, wy in zip(self._warm_xs, self._warm_ys):
-                    d = math.hypot(xs[i] - wx, ys[i] - wy)
-                    if d < best_d:
-                        best_d, bx, by = d, wx, wy
-                if best_d < 0.8:
-                    xs[i], ys[i] = bx, by
+        # ── Warm start: arc-length re-projection of previous band ────────
+        if self._warm_xs and self._warm_ys and len(self._warm_xs) >= 2:
+            warm_xs, warm_ys = self._warm_xs, self._warm_ys
+            warm_arc = [0.0]
+            for k in range(1, len(warm_xs)):
+                warm_arc.append(warm_arc[-1] + math.hypot(
+                    warm_xs[k] - warm_xs[k - 1],
+                    warm_ys[k] - warm_ys[k - 1]))
+            L_warm = warm_arc[-1]
+
+            new_arc = [0.0]
+            for k in range(1, n):
+                new_arc.append(new_arc[-1] + math.hypot(
+                    xs[k] - xs[k - 1], ys[k] - ys[k - 1]))
+            L_new = new_arc[-1]
+
+            if L_warm > 1e-3 and L_new > 1e-3:
+                for i in range(1, n - 1):
+                    target = (new_arc[i] / L_new) * L_warm
+                    for k in range(len(warm_arc) - 1):
+                        if warm_arc[k + 1] >= target:
+                            span = warm_arc[k + 1] - warm_arc[k]
+                            if span < 1e-9:
+                                xs[i], ys[i] = warm_xs[k], warm_ys[k]
+                            else:
+                                a = (target - warm_arc[k]) / span
+                                xs[i] = warm_xs[k] + a * (warm_xs[k + 1] - warm_xs[k])
+                                ys[i] = warm_ys[k] + a * (warm_ys[k + 1] - warm_ys[k])
+                            break
+
+        # ── Homotopy pre-routing ─────────────────────────────────────────
+        # Local optimization cannot escape a polygon that fully contains
+        # the band — the obstacle force balances on both sides and the
+        # band gets pinned. Push any band nodes still inside a polygon
+        # to one consistent side of that polygon (whichever has the
+        # shorter detour) before optimising.
+        self._preroute_around_polygons(xs, ys)
 
         step      = self.teb_step
         max_delta = self.teb_max_delta
