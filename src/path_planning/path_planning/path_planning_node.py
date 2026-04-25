@@ -2,25 +2,36 @@
 """
 path_planning_node.py
 =====================
-TEB (Timed Elastic Band) local planner.
+TEB-style local planner with polygon obstacles.
 
-How it differs from restarting TEB each cycle (which causes jitter):
-  Real nav2 teb_local_planner keeps a *persistent* trajectory between calls.
-  Each cycle it only prunes the start and extends the end, then runs a few
-  optimisation steps on the *existing* band — not from a fresh straight line.
-  We replicate this with a warm-start: interior waypoints are initialised
-  from the previous cycle's solution, so the band evolves smoothly.
+Pipeline (one cycle):
+  1. Costmap -> polygon obstacles
+       BFS-cluster lethal cells in a window around the robot, then take the
+       convex hull of each cluster's world-frame centers.
+       (nav2 analog: costmap_converter::CostmapToPolygonsDBSMCCH)
+  2. Local segment extraction
+       Prune behind the robot, then take a lookahead window of the global
+       path. Warm-started from the previous optimised band so the trajectory
+       evolves smoothly across cycles.
+  3. TEB optimisation
+       Gradient descent on the elastic band against
+         - polygon obstacle edges (outward force inside an inflation zone)
+         - smoothness (pull toward midpoint of neighbours)
+       Endpoints fixed.
+  4. Holonomic velocity extraction
+       Vector pursuit on the optimised band -> (vx, vy, omega=0).
 
 Inputs
 ------
 /odom           nav_msgs/Odometry       robot pose + velocity
 /global_path    nav_msgs/Path           reference path from global planner
-/local_costmap  nav_msgs/OccupancyGrid  obstacle grid (robot frame, 0.1 m/cell)
+/local_costmap  nav_msgs/OccupancyGrid  obstacle grid in odom frame
 
 Outputs
 -------
-/cmd_vel        geometry_msgs/TwistStamped   velocity command → mecanum robot
-/planned_path   nav_msgs/Path                optimised path (RViz visualisation)
+/cmd_vel             geometry_msgs/TwistStamped       velocity command
+/planned_path        nav_msgs/Path                    optimised band (RViz)
+/obstacle_polygons   visualization_msgs/MarkerArray   extracted polygons (RViz)
 """
 
 import math
@@ -28,7 +39,9 @@ import rclpy
 from rclpy.node import Node
 
 from nav_msgs.msg import Odometry, Path, OccupancyGrid
-from geometry_msgs.msg import PoseStamped, Pose, TwistStamped
+from geometry_msgs.msg import PoseStamped, Pose, TwistStamped, Point
+from visualization_msgs.msg import Marker, MarkerArray
+from std_msgs.msg import ColorRGBA
 
 
 def euclidean(p1: Pose, p2: Pose) -> float:
@@ -41,48 +54,52 @@ class PathPlanningNode(Node):
     def __init__(self):
         super().__init__('path_planning_node')
 
-        # ── Parameters ────────────────────────────────────────────────────
-        self.planning_freq          = 10    # Hz
-        self.lookahead_dist         = 10.0   # m — segment length fed to TEB
-        self.prune_dist             = 1.0   # m — drop waypoints closer than this
+        # ── General parameters ────────────────────────────────────────────
+        self.planning_freq          = 10     # Hz
+        self.lookahead_dist         = 10.0   # m — local segment length
         self.min_waypoints_required = 2
-        self.goal_tolerance         = 0.4   # m — stop when within this of goal
+        self.goal_tolerance         = 0.4    # m
 
         # ── TEB parameters ────────────────────────────────────────────────
-        self.teb_n_iter   = 100   # optimisation iterations per cycle
-        self.teb_w_obs    = 3.0   # obstacle repulsion weight
-        self.teb_w_smooth = 2.0   # smoothness (elastic band) weight
-        self.teb_w_time   = 0.1   # time-minimisation weight
-        self.v_max        = 1.5   # m/s — mecanum max linear speed
+        self.teb_n_iter      = 60      # gradient descent iterations / cycle
+        self.teb_w_obs       = 50.0 # 50.0    # obstacle repulsion weight
+        self.teb_w_smooth    = 2.0     # elastic band weight
+        self.teb_inflation   = 1.5 # 0.5     # m — repulsion radius around polygons
+        self.teb_step        = 0.05    # gradient step
+        self.teb_max_delta   = 0.10    # m — clamp per-iteration movement
+        self.v_max           = 1.5     # m/s
+
+        # ── Costmap-to-polygons parameters ────────────────────────────────
+        self.obstacle_threshold = 60    # cost >= this -> obstacle cell
+        self.cluster_min_cells  = 3     # filter noise clusters
+        self.search_margin      = 8.0   # m beyond lookahead to scan
 
         # ── Subscribers ───────────────────────────────────────────────────
-        self.odom_sub = self.create_subscription(
-            Odometry, '/odom', self._odom_callback, 10)
-        self.global_path_sub = self.create_subscription(
-            Path, '/global_path', self._global_path_callback, 10)
-        self.local_costmap_sub = self.create_subscription(
-            OccupancyGrid, '/local_costmap', self._local_costmap_callback, 10)
+        self.create_subscription(Odometry,       '/odom',          self._odom_callback,          10)
+        self.create_subscription(Path,           '/global_path',   self._global_path_callback,   10)
+        self.create_subscription(OccupancyGrid,  '/local_costmap', self._local_costmap_callback, 10)
 
         # ── Publishers ────────────────────────────────────────────────────
-        self.cmd_vel_pub = self.create_publisher(TwistStamped, '/cmd_vel', 10)
-        self.path_pub    = self.create_publisher(Path, '/planned_path', 10)
+        self.cmd_vel_pub = self.create_publisher(TwistStamped, '/cmd_vel',           10)
+        self.path_pub    = self.create_publisher(Path,         '/planned_path',      10)
+        self.polygon_pub = self.create_publisher(MarkerArray,  '/obstacle_polygons', 10)
 
         # ── Internal state ────────────────────────────────────────────────
-        self._robot_pose: Pose | None        = None
-        self._robot_vel                      = None   # geometry_msgs/Twist
-        self._global_path: Path | None       = None
+        self._robot_pose: Pose | None             = None
+        self._robot_vel                           = None
+        self._global_path: Path | None            = None
         self._local_costmap: OccupancyGrid | None = None
-        self._prune_index: int               = 0
+        self._prune_index: int                    = 0
 
-        # Warm-start state: interior waypoints from the previous optimised band.
-        # Set to None whenever a new global path arrives so TEB re-initialises.
+        # Warm start from previous optimised band.
         self._warm_xs: list[float] | None = None
         self._warm_ys: list[float] | None = None
 
-        # ── Timer ─────────────────────────────────────────────────────────
-        self.create_timer(1.0 / self.planning_freq, self._replan)
+        # Polygons extracted from current costmap (set each cycle).
+        self._polygons: list[list[tuple[float, float]]] = []
 
-        self.get_logger().info('PathPlanningNode started')
+        self.create_timer(1.0 / self.planning_freq, self._replan)
+        self.get_logger().info('PathPlanningNode (TEB polygon-style) started')
 
     # ──────────────────────────────────────────────────────────────────────
     # Callbacks
@@ -97,106 +114,286 @@ class PathPlanningNode(Node):
 
     def _global_path_callback(self, msg: Path):
         if self._global_path is not None and len(msg.poses) > 0:
-            # Ignore exact same message republished by timer
             if (msg.header.stamp.sec == self._global_path.header.stamp.sec and
                 msg.header.stamp.nanosec == self._global_path.header.stamp.nanosec):
                 return
-                
+
             new_goal = msg.poses[-1].pose.position
             old_goal = self._global_path.poses[-1].pose.position
             same_goal = (abs(new_goal.x - old_goal.x) < 0.01 and
                          abs(new_goal.y - old_goal.y) < 0.01)
             if same_goal:
-                # Path changed geometrically but goal is the same (e.g. replanning).
-                # Reset prune_index so we find the correct closest point on the new path,
-                # but KEEP warm state (Euclidean matching handles it safely) to avoid jitter.
+                # Geometry changed but goal is the same — keep warm state.
                 self._global_path = msg
                 self._prune_index = 0
                 return
 
-        # New goal → full reset so TEB starts fresh from the new reference path
         self._global_path = msg
         self._prune_index = 0
         self._warm_xs     = None
         self._warm_ys     = None
-        self.get_logger().info(f'New goal received — resetting planner ({len(msg.poses)} waypoints)')
+        self.get_logger().info(f'New goal received ({len(msg.poses)} waypoints)')
 
     # ──────────────────────────────────────────────────────────────────────
     # Planning loop
     # ──────────────────────────────────────────────────────────────────────
 
     def _replan(self):
-        if self._robot_pose is None or self._global_path is None \
-                or self._local_costmap is None:
-            print("No Data")
+        if self._robot_pose is None or self._global_path is None or self._local_costmap is None:
             return
         if len(self._global_path.poses) < self.min_waypoints_required:
-            print("No Enough Point")
             return
 
-        # Goal reached → stop
-        goal_pose = self._global_path.poses[-1].pose
-        if euclidean(self._robot_pose, goal_pose) < self.goal_tolerance:
-            print("Reach Goal")
+        if euclidean(self._robot_pose, self._global_path.poses[-1].pose) < self.goal_tolerance:
             self._pub_stop()
             return
 
-        # 1. Advance prune index to closest global-path waypoint
-        closest_idx = self._find_closest_index()
-        self._prune_passes_waypoints(closest_idx)
+        # 1. Costmap -> polygon obstacles
+        self._polygons = self._costmap_to_polygons()
+        self._publish_polygons()
 
-        # 2. Extract local segment (reference band for TEB)
+        # 2. Reference segment from global path
+        self._prune_index = self._find_closest_index()
         segment = self._extract_local_segment()
         if len(segment) < self.min_waypoints_required:
             return
 
-        # 3. TEB optimisation with warm start
+        # 3. TEB optimisation
         opt_xs, opt_ys = self._teb_optimize(segment)
 
-        # 4. Save warm state for next cycle
+        # 4. Cache for next cycle's warm start
         self._warm_xs = opt_xs[:]
         self._warm_ys = opt_ys[:]
-        
-        # 5. Publish optimised path (RViz)
-        self._publish_path(opt_xs, opt_ys, segment[0].header.frame_id)
 
-        # 6. Compute and publish velocity command
-        cmd = self._compute_cmd_vel(opt_xs, opt_ys)
-        self.cmd_vel_pub.publish(cmd)
+        # 5. Publish optimised path & velocity
+        self._publish_path(opt_xs, opt_ys, segment[0].header.frame_id)
+        self.cmd_vel_pub.publish(self._compute_cmd_vel(opt_xs, opt_ys))
 
     # ──────────────────────────────────────────────────────────────────────
-    # TEB core
+    # Costmap -> Polygons (costmap_converter style)
+    # ──────────────────────────────────────────────────────────────────────
+
+    def _costmap_to_polygons(self) -> list[list[tuple[float, float]]]:
+        """
+        Cluster lethal cells with 8-connected BFS, then convex-hull each
+        cluster's world-frame centers. Equivalent in spirit to nav2's
+        costmap_converter::CostmapToPolygonsDBSMCCH (DBSCAN + convex hull),
+        with grid connectivity instead of DBSCAN for speed in pure Python.
+
+        Costmap is in odom frame, so polygons are returned in odom frame.
+        """
+        cm   = self._local_costmap
+        info = cm.info
+        w, h = info.width, info.height
+        res  = info.resolution
+        ox   = info.origin.position.x
+        oy   = info.origin.position.y
+        data = cm.data
+
+        # Restrict scan to a window around the robot for performance.
+        rx = self._robot_pose.position.x
+        ry = self._robot_pose.position.y
+        margin_cells = int((self.lookahead_dist + self.search_margin) / res)
+        cx_robot = int((rx - ox) / res)
+        cy_robot = int((ry - oy) / res)
+        i_lo = max(0, cx_robot - margin_cells)
+        i_hi = min(w, cx_robot + margin_cells + 1)
+        j_lo = max(0, cy_robot - margin_cells)
+        j_hi = min(h, cy_robot + margin_cells + 1)
+
+        # 1. Collect occupied cells in the window.
+        threshold = self.obstacle_threshold
+        occupied: set[tuple[int, int]] = set()
+        for j in range(j_lo, j_hi):
+            base = j * w
+            for i in range(i_lo, i_hi):
+                if data[base + i] >= threshold:
+                    occupied.add((i, j))
+
+        if not occupied:
+            return []
+
+        # 2. BFS clustering with 8-connectivity.
+        polygons: list[list[tuple[float, float]]] = []
+        visited: set[tuple[int, int]] = set()
+        neighbors = ((-1,-1),(-1,0),(-1,1),(0,-1),(0,1),(1,-1),(1,0),(1,1))
+
+        for start in occupied:
+            if start in visited:
+                continue
+            cluster = []
+            stack = [start]
+            while stack:
+                c = stack.pop()
+                if c in visited:
+                    continue
+                visited.add(c)
+                cluster.append(c)
+                ci, cj = c
+                for di, dj in neighbors:
+                    n = (ci + di, cj + dj)
+                    if n in occupied and n not in visited:
+                        stack.append(n)
+
+            if len(cluster) < self.cluster_min_cells:
+                continue
+
+            # 3. Convex hull of cluster (world frame).
+            world_pts = [(ox + (i + 0.5) * res, oy + (j + 0.5) * res)
+                         for i, j in cluster]
+            hull = self._convex_hull(world_pts)
+            if len(hull) >= 2:
+                polygons.append(hull)
+
+        return polygons
+
+    @staticmethod
+    def _convex_hull(points: list[tuple[float, float]]) -> list[tuple[float, float]]:
+        """Andrew's monotone chain. Returns CCW hull (open polyline, no repeat)."""
+        pts = sorted(set(points))
+        if len(pts) <= 2:
+            return pts
+
+        def cross(o, a, b):
+            return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+        lower = []
+        for p in pts:
+            while len(lower) >= 2 and cross(lower[-2], lower[-1], p) <= 0:
+                lower.pop()
+            lower.append(p)
+        upper = []
+        for p in reversed(pts):
+            while len(upper) >= 2 and cross(upper[-2], upper[-1], p) <= 0:
+                upper.pop()
+            upper.append(p)
+        return lower[:-1] + upper[:-1]
+
+    # ──────────────────────────────────────────────────────────────────────
+    # Polygon distance / obstacle force
+    # ──────────────────────────────────────────────────────────────────────
+
+    def _obstacle_force(self, x: float, y: float) -> tuple[float, float]:
+        """
+        Returns the repulsive force on a waypoint from the closest polygon.
+        Mirrors TEB's PolygonObstacle obstacle edge:
+          - force = 0 outside the inflation radius
+          - force grows linearly with penetration depth
+          - direction: away from nearest polygon-boundary point
+        Inside a polygon -> strong push toward the nearest boundary (escape).
+        """
+        if not self._polygons:
+            return 0.0, 0.0
+
+        best_d      = float('inf')
+        best_cx     = 0.0
+        best_cy     = 0.0
+        best_inside = False
+
+        for poly in self._polygons:
+            d, cx, cy, inside = self._point_polygon_signed_dist(x, y, poly)
+            # Once we know we're inside any polygon, prefer escaping it.
+            if inside:
+                if not best_inside or d < best_d:
+                    best_d, best_cx, best_cy, best_inside = d, cx, cy, True
+            elif not best_inside and d < best_d:
+                best_d, best_cx, best_cy = d, cx, cy
+
+        if best_inside:
+            # Escape direction: toward the nearest boundary point.
+            vx, vy = best_cx - x, best_cy - y
+            m = math.hypot(vx, vy)
+            if m < 1e-9:
+                return self.teb_inflation, 0.0
+            return self.teb_inflation * vx / m, self.teb_inflation * vy / m
+
+        if best_d >= self.teb_inflation:
+            return 0.0, 0.0
+
+        # Outside, but inside inflation zone: push away from boundary.
+        vx, vy = x - best_cx, y - best_cy
+        m = math.hypot(vx, vy)
+        if m < 1e-9:
+            return 0.0, 0.0
+        mag = self.teb_inflation - best_d
+        return mag * vx / m, mag * vy / m
+
+    @staticmethod
+    def _point_polygon_signed_dist(
+            x: float, y: float,
+            poly: list[tuple[float, float]]
+    ) -> tuple[float, float, float, bool]:
+        """
+        Returns (distance_to_boundary, closest_x, closest_y, inside).
+        Distance is unsigned distance to polygon boundary.
+        `inside` is True when (x, y) is strictly inside the polygon.
+        """
+        n = len(poly)
+        if n == 0:
+            return float('inf'), x, y, False
+        if n == 1:
+            return math.hypot(x - poly[0][0], y - poly[0][1]), poly[0][0], poly[0][1], False
+
+        # Closest point on polygon boundary.
+        best_d = float('inf')
+        best_x = x
+        best_y = y
+        for i in range(n):
+            x1, y1 = poly[i]
+            x2, y2 = poly[(i + 1) % n]
+            dx, dy = x2 - x1, y2 - y1
+            l2 = dx * dx + dy * dy
+            if l2 < 1e-12:
+                cx, cy = x1, y1
+            else:
+                t = ((x - x1) * dx + (y - y1) * dy) / l2
+                if t < 0.0:
+                    t = 0.0
+                elif t > 1.0:
+                    t = 1.0
+                cx, cy = x1 + t * dx, y1 + t * dy
+            d = math.hypot(x - cx, y - cy)
+            if d < best_d:
+                best_d, best_x, best_y = d, cx, cy
+
+        # Inside test (ray casting). Skip for degenerate polygons.
+        inside = False
+        if n >= 3:
+            j = n - 1
+            for i in range(n):
+                xi, yi = poly[i]
+                xj, yj = poly[j]
+                if ((yi > y) != (yj > y)) and \
+                   (x < (xj - xi) * (y - yi) / (yj - yi + 1e-12) + xi):
+                    inside = not inside
+                j = i
+
+        return best_d, best_x, best_y, inside
+
+    # ──────────────────────────────────────────────────────────────────────
+    # TEB optimisation
     # ──────────────────────────────────────────────────────────────────────
 
     def _teb_optimize(self,
                       segment: list[PoseStamped]
                       ) -> tuple[list[float], list[float]]:
         """
-        Timed Elastic Band — adapted from nav2 teb_local_planner behaviour.
+        Elastic band optimisation against polygon obstacles.
 
-        nav2 TEB key ideas replicated here:
-          1. Warm start  — interior nodes initialised from previous solution
-             so the band evolves incrementally (no restart jitter).
-          2. Elastic band — smoothness force pulls nodes toward midpoint of
-             neighbours; obstacle force pushes them away.
-          3. Time update  — dt_i shrinks toward dist/v_max each iteration.
-          4. Fixed endpoints — start and goal are never moved.
-
-        Returns (xs, ys): optimised waypoint positions in odom frame.
+        Each interior node is updated with two forces, identical in role to
+        the corresponding TEB g2o edges:
+          - obstacle edge   -> push out of polygon inflation zone
+          - velocity/elastic -> pull toward midpoint of neighbours (smoothing)
+        Endpoints (start, goal) are fixed. Per-iteration motion is clamped
+        so the band cannot teleport across narrow gaps.
         """
         n = len(segment)
-        if n < 2:
-            return ([p.pose.position.x for p in segment],
-                    [p.pose.position.y for p in segment])
-
         xs = [p.pose.position.x for p in segment]
         ys = [p.pose.position.y for p in segment]
+        if n < 2:
+            return xs, ys
 
-        # ── Warm start ────────────────────────────────────────────────────
-        # For each interior node in the new segment, find the closest node
-        # in the previous optimised band and use it as the starting position.
-        # This is equivalent to nav2 TEB's "updateAndPruneTEB" step: the old
-        # band is re-used as the initial guess rather than a straight line.
+        # ── Warm start: snap interior nodes to closest previous waypoint ──
         if self._warm_xs and self._warm_ys:
             for i in range(1, n - 1):
                 best_d = float('inf')
@@ -205,80 +402,42 @@ class PathPlanningNode(Node):
                     d = math.hypot(xs[i] - wx, ys[i] - wy)
                     if d < best_d:
                         best_d, bx, by = d, wx, wy
-                if best_d < 0.8:   # only warm-start if previous node is nearby
+                if best_d < 0.8:
                     xs[i], ys[i] = bx, by
 
-        # ── Initial time intervals ────────────────────────────────────────
-        dts = []
-        for i in range(n - 1):
-            dist = math.hypot(xs[i + 1] - xs[i], ys[i + 1] - ys[i])
-            dts.append(max(0.05, dist / self.v_max))
-
-        # ── Pre-compute robot-frame transform (constant during optimisation) ─
-        # Avoids repeating atan2 + trig inside the inner loop.
-        qz  = self._robot_pose.orientation.z
-        qw  = self._robot_pose.orientation.w
-        yaw = 2.0 * math.atan2(qz, qw)
-        cos_y = math.cos(yaw)
-        sin_y = math.sin(yaw)
-        rx    = self._robot_pose.position.x
-        ry    = self._robot_pose.position.y
-
-        step      = 0.05   # gradient step size
-        eps       = 0.15   # > costmap resolution (0.1 m) → samples different cells
-        max_delta = 0.10   # max movement per waypoint per iteration (m)
+        step      = self.teb_step
+        max_delta = self.teb_max_delta
+        w_obs     = self.teb_w_obs
+        w_smooth  = self.teb_w_smooth
 
         for _ in range(self.teb_n_iter):
-
-            # ── A. Elastic band update ─────────────────────────────────
             for i in range(1, n - 1):
+                fx_obs, fy_obs = self._obstacle_force(xs[i], ys[i])
 
-                # Obstacle gradient (numerical, using cached transform)
-                c_px = self._costmap_cost_fast(xs[i]+eps, ys[i],   rx, ry, cos_y, sin_y)
-                c_mx = self._costmap_cost_fast(xs[i]-eps, ys[i],   rx, ry, cos_y, sin_y)
-                c_py = self._costmap_cost_fast(xs[i],     ys[i]+eps, rx, ry, cos_y, sin_y)
-                c_my = self._costmap_cost_fast(xs[i],     ys[i]-eps, rx, ry, cos_y, sin_y)
-                grad_x = (c_px - c_mx) / (2.0 * eps)
-                grad_y = (c_py - c_my) / (2.0 * eps)
+                # Smoothness force (elastic band): pull toward midpoint.
+                f_sx = (xs[i - 1] + xs[i + 1]) / 2.0 - xs[i]
+                f_sy = (ys[i - 1] + ys[i + 1]) / 2.0 - ys[i]
 
-                # Smoothness force (elastic): pull toward midpoint of neighbours
-                f_sx = (xs[i-1] + xs[i+1]) / 2.0 - xs[i]
-                f_sy = (ys[i-1] + ys[i+1]) / 2.0 - ys[i]
+                dx = step * (w_obs * fx_obs + w_smooth * f_sx)
+                dy = step * (w_obs * fy_obs + w_smooth * f_sy)
 
-                dx = step * (-self.teb_w_obs * grad_x + self.teb_w_smooth * f_sx)
-                dy = step * (-self.teb_w_obs * grad_y + self.teb_w_smooth * f_sy)
-
-                # Clamp to prevent instability
                 mag = math.hypot(dx, dy)
                 if mag > max_delta:
-                    dx = dx * max_delta / mag
-                    dy = dy * max_delta / mag
+                    dx *= max_delta / mag
+                    dy *= max_delta / mag
 
                 xs[i] += dx
                 ys[i] += dy
 
-            # ── B. Time interval update ────────────────────────────────
-            for i in range(n - 1):
-                dist   = math.hypot(xs[i+1] - xs[i], ys[i+1] - ys[i])
-                dt_min = dist / self.v_max
-                dts[i] = max(dt_min, dts[i] - self.teb_w_time * step)
-
         return xs, ys
 
     # ──────────────────────────────────────────────────────────────────────
-    # Velocity extraction
+    # Velocity extraction (holonomic vector pursuit)
     # ──────────────────────────────────────────────────────────────────────
 
     def _compute_cmd_vel(self,
                          opt_xs: list[float],
                          opt_ys: list[float]) -> TwistStamped:
-        """
-        Strict Holonomic Velocity Extraction — produces vx, vy, omega.
-        
-        Instead of using Pure Pursuit curvature to steer the nose, this draws a 
-        direct vector to the lookahead point in the robot's body frame and applies 
-        linear velocity along that exact vector (sliding).
-        """
         cmd = TwistStamped()
         cmd.header.stamp    = self.get_clock().now().to_msg()
         cmd.header.frame_id = 'base_link'
@@ -294,42 +453,31 @@ class PathPlanningNode(Node):
         cos_y = math.cos(yaw)
         sin_y = math.sin(yaw)
 
-        # ── 1. Select lookahead point ──────────────────────────────────
-        lookahead = 0.5   # m
+        # 1. Lookahead point on the optimised band.
+        lookahead = 0.5
         tx, ty = opt_xs[-1], opt_ys[-1]
         for ox, oy in zip(opt_xs, opt_ys):
             if math.hypot(ox - rx, oy - ry) >= lookahead:
                 tx, ty = ox, oy
                 break
 
-        # ── 2. Transform lookahead point to robot body frame ───────────
-        dx_w = tx - rx
-        dy_w = ty - ry
-        xl   =  dx_w * cos_y + dy_w * sin_y   # Forward distance to target
-        yl   = -dx_w * sin_y + dy_w * cos_y   # Lateral distance to target
-        L    = math.hypot(xl, yl)             # Direct distance to lookahead
-        
+        # 2. Body-frame vector to lookahead.
+        dxw = tx - rx
+        dyw = ty - ry
+        xl =  dxw * cos_y + dyw * sin_y
+        yl = -dxw * sin_y + dyw * cos_y
+        L  = math.hypot(xl, yl)
         if L < 1e-6:
             return cmd
 
-        # ── 3. Forward speed: decelerate near goal ─────────────────────
-        goal   = self._global_path.poses[-1].pose
-        d_goal = euclidean(self._robot_pose, goal)
+        # 3. Decelerate near goal.
+        d_goal   = euclidean(self._robot_pose, self._global_path.poses[-1].pose)
         v_target = min(self.v_max, max(0.05, d_goal * 1.5))
 
-        # ── 4. Holonomic Velocity Distribution ─────────────────────────
-        # Normalize the body-frame vector (xl, yl) and multiply by target speed.
-        # This makes the robot slide directly toward the point.
-        vx = v_target * (xl / L)
-        vy = v_target * (yl / L)
-
-        # ── 5. Angular velocity (Yaw) ──────────────────────────────────
-        # Holonomic robots can slide. User requested pure lateral movement without yawing.
-        omega = 0.0
-
-        cmd.twist.linear.x  = vx
-        cmd.twist.linear.y  = vy
-        cmd.twist.angular.z = omega
+        # 4. Holonomic distribution (slide directly toward lookahead).
+        cmd.twist.linear.x  = v_target * (xl / L)
+        cmd.twist.linear.y  = v_target * (yl / L)
+        cmd.twist.angular.z = 0.0
         return cmd
 
     def _pub_stop(self):
@@ -339,47 +487,42 @@ class PathPlanningNode(Node):
         self.cmd_vel_pub.publish(cmd)
 
     # ──────────────────────────────────────────────────────────────────────
-    # Costmap helpers
+    # Visualization
     # ──────────────────────────────────────────────────────────────────────
 
-    def _costmap_cost_fast(self, x: float, y: float,
-                           rx: float, ry: float,
-                           cos_y: float, sin_y: float) -> float:
-        """
-        Obstacle penalty [0–1] with pre-computed robot-frame transform.
-        Called thousands of times per cycle — avoids repeated trig.
-        """
-        if self._local_costmap is None:
-            return 0.0
-        dx = x - rx
-        dy = y - ry
-        lx =  dx * cos_y + dy * sin_y
-        ly = -dx * sin_y + dy * cos_y
-        info = self._local_costmap.info
-        gx = int((lx - info.origin.position.x) / info.resolution)
-        gy = int((ly - info.origin.position.y) / info.resolution)
-        if not (0 <= gx < info.width and 0 <= gy < info.height):
-            return 0.0
-        raw = float(max(0, self._local_costmap.data[gy * info.width + gx]))
-        if raw <= 20.0:
-            return 0.0
-        return (raw - 20.0) / 80.0
+    def _publish_polygons(self):
+        ma = MarkerArray()
+        frame = self._local_costmap.header.frame_id
+        stamp = self.get_clock().now().to_msg()
 
-    def _costmap_cost(self, x: float, y: float) -> float:
-        """Obstacle penalty [0–1] — convenience wrapper used outside TEB."""
-        if self._local_costmap is None or self._robot_pose is None:
-            return 0.0
-        qz  = self._robot_pose.orientation.z
-        qw  = self._robot_pose.orientation.w
-        yaw = 2.0 * math.atan2(qz, qw)
-        return self._costmap_cost_fast(x, y,
-                                       self._robot_pose.position.x,
-                                       self._robot_pose.position.y,
-                                       math.cos(yaw), math.sin(yaw))
+        # Clear previous polygons before drawing new ones.
+        clear = Marker()
+        clear.header.frame_id = frame
+        clear.action = Marker.DELETEALL
+        ma.markers.append(clear)
 
-    # ──────────────────────────────────────────────────────────────────────
-    # Path helpers
-    # ──────────────────────────────────────────────────────────────────────
+        for idx, poly in enumerate(self._polygons):
+            m = Marker()
+            m.header.frame_id = frame
+            m.header.stamp    = stamp
+            m.ns              = 'obstacle_polygons'
+            m.id              = idx
+            m.type            = Marker.LINE_STRIP
+            m.action          = Marker.ADD
+            m.scale.x         = 0.05
+            m.color           = ColorRGBA(r=1.0, g=0.2, b=0.2, a=1.0)
+            m.pose.orientation.w = 1.0
+            for (px, py) in poly:
+                pt = Point()
+                pt.x, pt.y, pt.z = px, py, 0.0
+                m.points.append(pt)
+            if len(poly) >= 3:
+                first = Point()
+                first.x, first.y, first.z = poly[0][0], poly[0][1], 0.0
+                m.points.append(first)
+            ma.markers.append(m)
+
+        self.polygon_pub.publish(ma)
 
     def _publish_path(self, xs: list[float], ys: list[float], frame: str):
         n = len(xs)
@@ -389,8 +532,8 @@ class PathPlanningNode(Node):
         path_msg.header.frame_id = frame
         for i in range(n):
             theta = math.atan2(
-                ys[min(i+1, n-1)] - ys[max(i-1, 0)],
-                xs[min(i+1, n-1)] - xs[max(i-1, 0)]
+                ys[min(i + 1, n - 1)] - ys[max(i - 1, 0)],
+                xs[min(i + 1, n - 1)] - xs[max(i - 1, 0)]
             )
             ps = PoseStamped()
             ps.header.frame_id    = frame
@@ -402,30 +545,29 @@ class PathPlanningNode(Node):
             path_msg.poses.append(ps)
         self.path_pub.publish(path_msg)
 
-    def _find_closest_index(self) -> int:
-        waypoints    = self._global_path.poses
-        closest_idx  = self._prune_index
-        closest_dist = float('inf')
-        for i in range(self._prune_index, len(waypoints)):
-            d = euclidean(self._robot_pose, waypoints[i].pose)
-            if d < closest_dist:
-                closest_dist = d
-                closest_idx  = i
-        return closest_idx
+    # ──────────────────────────────────────────────────────────────────────
+    # Path helpers
+    # ──────────────────────────────────────────────────────────────────────
 
-    def _prune_passes_waypoints(self, closest_idx: int):
-        self._prune_index = closest_idx
+    def _find_closest_index(self) -> int:
+        wp = self._global_path.poses
+        idx, best = self._prune_index, float('inf')
+        for i in range(self._prune_index, len(wp)):
+            d = euclidean(self._robot_pose, wp[i].pose)
+            if d < best:
+                best, idx = d, i
+        return idx
 
     def _extract_local_segment(self) -> list[PoseStamped]:
-        waypoints = self._global_path.poses
-        segment   = []
-        for i in range(self._prune_index, len(waypoints)):
-            d = euclidean(self._robot_pose, waypoints[i].pose)
+        wp = self._global_path.poses
+        seg = []
+        for i in range(self._prune_index, len(wp)):
+            d = euclidean(self._robot_pose, wp[i].pose)
             if d <= self.lookahead_dist:
-                segment.append(waypoints[i])
+                seg.append(wp[i])
             else:
                 break
-        return segment
+        return seg
 
 
 def main(args=None):
