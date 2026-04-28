@@ -94,6 +94,10 @@ class HumanDetectionNode(Node):
         )
         self.mp_draw = mp.solutions.drawing_utils
 
+        self.human_history = {} # เก็บ {id: {'pos': (x, y), 'time': timestamp}}
+        self.min_front_scale = 1.2 # scale พื้นฐานเมื่อหยุดนิ่ง
+        self.velocity_factor = 0.8  # ตัวคูณความเร็ว ยิ่งเยอะไข่ยิ่งยืด
+
         # ---------------------------------------------------
 
         # ----------------- Camera Intrinsics -----------------
@@ -108,12 +112,6 @@ class HumanDetectionNode(Node):
         # Optical Center
         self.uc = self.img_w / 2.0
         self.vc = self.img_h / 2.0
-
-        # ---------------------------------------------------
-
-        # ----------------- Human Trajectory Script (Ground Truth) -----------------
-        self.start_sim_time = None
-        self.trajectory_duration = 28.6
 
         # ---------------------------------------------------
 
@@ -145,103 +143,6 @@ class HumanDetectionNode(Node):
     # Detection pipeline
     # ──────────────────────────────────────────────────────────────────────
 
-    # def _run_detection(self):
-    #     """
-    #     Called whenever a new scan arrives.
-    #     Populate detections with (x, y) positions in the odom frame,
-    #     then call self._publish(detections).
-    #     """
-    #     if self._latest_scan is None:
-    #         return
-
-    #     detections: list[tuple[float, float]] = []
-
-    #     try:
-    #         # 1. แปลงภาพเป็น OpenCV
-    #         cv_image = self.bridge.imgmsg_to_cv2(self._latest_image, desired_encoding='bgr8')
-    #         h, w, _ = cv_image.shape
-            
-    #         # 2. รัน YOLO Detection (กรองเอาเฉพาะ 'person' class คือ ID 0)
-    #         # stream=True ช่วยลด memory usage
-    #         results = self.human_detect_model.predict(source=cv_image, classes=[0], conf=0.5, verbose=False)
-            
-    #         detections: list[tuple[float, float]] = []
-
-    #         # 3. จัดการผลลัพธ์
-    #         for r in results:
-    #             boxes = r.boxes
-    #             for box in boxes:
-    #                 # ตีกรอบลงบนภาพ
-    #                 x1, y1, x2, y2 = box.xyxy[0]
-    #                 x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
-    #                 cv2.rectangle(cv_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
-    #                 # cv2.putText(cv_image, "Human", (x1, y1 - 10), 
-    #                 #             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-
-    #                 # ขั้นตอนที่ 2: Crop ภาพเฉพาะส่วนที่ YOLO เจอคน
-    #                 # เพิ่ม Padding เล็กน้อยเพื่อให้ MediaPipe เห็นหัวและเท้าครบ
-    #                 pad = 20
-    #                 crop_y1, crop_y2 = max(0, y1-pad), min(h, y2+pad)
-    #                 crop_x1, crop_x2 = max(0, x1-pad), min(w, x2+pad)
-    #                 person_crop = cv_image[crop_y1:crop_y2, crop_x1:crop_x2]
-
-    #                 if person_crop.size == 0: continue
-
-    #                 # ขั้นตอนที่ 3: ส่ง Crop ไปให้ MediaPipe (ประหยัด CPU เพราะภาพเล็ก)
-    #                 person_rgb = cv2.cvtColor(person_crop, cv2.COLOR_BGR2RGB)
-    #                 pose_results = self.pose_detector.process(person_rgb)
-
-    #                 # self.get_logger().info(f'{pose_results.pose_landmarks}')
-    #                 if pose_results.pose_landmarks:
-
-    #                     self.mp_draw.draw_landmarks(
-    #                         person_crop, 
-    #                         pose_results.pose_landmarks, 
-    #                         self.mp_pose.POSE_CONNECTIONS,
-    #                         self.mp_draw.DrawingSpec(color=(0, 255, 0), thickness=2, circle_radius=2), # dot
-    #                         self.mp_draw.DrawingSpec(color=(0, 0, 255), thickness=2, circle_radius=1)  # line
-    #                     )
-
-    #                     # 2. แสดงหน้าต่างแยกเฉพาะคน (จะเห็น Skeleton ชัดเจน)
-    #                     # cv2.imshow("Mediapipe Skeleton (Crop)", person_crop)
-
-    #                     # คำนวณทิศทางใบหน้า (Orientation)
-    #                     orientation = self._get_orientation(pose_results.pose_landmarks.landmark)
-                        
-    #                     cv2.putText(cv_image, f"Dir: {orientation}", (x1, y1-10), 
-    #                                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 2)
-
-                           
-    #                 # ── ส่วนคำนวณตำแหน่ง 3D (Logic เบื้องต้น) ──────────────────
-    #                 # ในระบบจริง คุณต้องนำพิกัดกลางภาพ (u, v) ไปเทียบกับ LiDAR scan
-    #                 # หรือใช้ Depth Camera เพื่อหา x, y ใน odom frame
-                    
-    #                 # หาจุดกึ่งกลางพิกเซลของคน
-    #                 u_center = (x1 + x2) / 2
-    #                 v_center = (y1 + y2) / 2
-                    
-    #                 dist_m = self._get_distance_from_scan(u_center)
-
-    #                 if dist_m > 0:
-    #                     # คำนวณพิกัดโลก
-    #                     wx, wy = self._get_human_world_pose(u_center, v_center, dist_m)
-
-    #                     # 2. เรียกใช้ฟังก์ชันรูปไข่ตรงนี้!
-    #                     # มันจะสร้าง Marker ใน RViz ที่ตำแหน่ง wx, wy และหมุนตาม person_yaw
-    #                     self.publish_social_zone_ellipse(wx, wy, orientation)
-    #                 else:
-    #                     wx, wy = 0.0, 0.0
-                    
-    #                 # self.get_logger().info(f"Human at: x={wx:.2f}m, y={wy:.2f}m")
-    #                 detections.append((wx, wy))
-
-    #         # 4. แสดงผลภาพที่ตีกรอบแล้ว
-    #         cv2.imshow("YOLO Human Detection", cv_image)
-    #         cv2.waitKey(1)
-
-        # except Exception as e:
-        #     self.get_logger().error(f'Detection Error: {e}')
-
     def _run_detection(self):
         if self._latest_scan is None or self._latest_image is None:
             return
@@ -251,29 +152,22 @@ class HumanDetectionNode(Node):
             h, w, _ = cv_image.shape
             results = self.human_detect_model.predict(source=cv_image, classes=[0], conf=0.5, verbose=False)
             
-            # สร้าง MarkerArray ว่างไว้รวบรวม Marker ของทุกคน
             all_markers = MarkerArray()
+            now = self.get_clock().now()
 
-            # วนลูปจัดการคนทุกคนที่ YOLO เจอ
+            # YOLO results[0].boxes ให้ข้อมูล ID มาด้วย (ถ้าใช้ mode track)
+            # ในที่นี้สมมติ i คือ index ของการตรวจจับ
             for i, r in enumerate(results[0].boxes):
                 x1, y1, x2, y2 = map(int, r.xyxy[0])
                 
-                # --- MediaPipe & Orientation ---
-                person_crop = cv_image[max(0, y1-20):min(h, y2+20), max(0, x1-20):min(w, x2+20)]
+                # --- Orientation & Pose (เหมือนเดิม) ---
                 person_yaw = 0.0
-                
-                # self.get_logger().info(f'Processing person {i} with crop size: {person_crop.shape}')
+                person_crop = cv_image[max(0, y1-20):min(h, y2+20), max(0, x1-20):min(w, x2+20)]
                 if person_crop.size > 0:
-                    person_rgb = cv2.cvtColor(person_crop, cv2.COLOR_BGR2RGB)
-                    pose_results = self.pose_detector.process(person_rgb)
+                    pose_results = self.pose_detector.process(cv2.cvtColor(person_crop, cv2.COLOR_BGR2RGB))
                     if pose_results.pose_landmarks:
-                        # ใช้ฟังก์ชันคำนวณมุมแบบละเอียด 360 องศาที่เราทำกันก่อนหน้า
-                        # person_yaw = self._get_orientation(pose_results.pose_landmarks.landmark)
-                        
-                        # วาด Skeleton ลงบนภาพหลักเพื่อดูหลายคนพร้อมกัน
-                        self.mp_draw.draw_landmarks(person_crop, pose_results.pose_landmarks, self.mp_pose.POSE_CONNECTIONS)
+                        person_yaw = self._get_orientation(pose_results.pose_landmarks.landmark)
 
-                # self.get_logger().info(f'Person {i} orientation (yaw): {math.degrees(person_yaw):.1f} degrees')
                 # --- 3D Position ---
                 u_center = (x1 + x2) / 2
                 v_center = (y1 + y2) / 2
@@ -282,15 +176,37 @@ class HumanDetectionNode(Node):
                 if dist_m > 0:
                     wx, wy = self._get_human_world_pose(u_center, v_center, dist_m)
                     
-                    # 🔥 เรียกใช้ฟังก์ชันรูปไข่ โดยส่ง i (Index) เข้าไปด้วย
-                    egg_marker = self.create_egg_marker(wx, wy, person_yaw, person_id=i)
+                    # ─── คำนวณความเร็ว ───
+                    velocity = 0.0
+                    person_id = i # ในระบบจริงควรใช้ r.id[0] ถ้าใช้ model.track()
+                    
+                    if person_id in self.human_history:
+                        prev_data = self.human_history[person_id]
+                        prev_pos = prev_data['pos']
+                        prev_time = prev_data['time']
+                        
+                        # คำนวณระยะทางและเวลาที่ต่างกัน
+                        dist_diff = math.sqrt((wx - prev_pos[0])**2 + (wy - prev_pos[1])**2)
+                        time_diff = (now - prev_time).nanoseconds / 1e9
+                        
+                        if time_diff > 0:
+                            velocity = dist_diff / time_diff
+                            # ป้องกันค่ากระโดด (Outlier rejection)
+                            velocity = min(velocity, 2.5) # คนไม่น่าเดินเร็วเกิน 2.5 m/s
+
+                    # อัปเดตประวัติ
+                    self.human_history[person_id] = {'pos': (wx, wy), 'time': now}
+
+                    # 🔥 ส่งค่า velocity เข้าไปในฟังก์ชันสร้างไข่
+                    egg_marker = self.create_egg_marker(wx, wy, person_yaw, person_id, velocity)
                     all_markers.markers.append(egg_marker)
 
-                    # ใส่ Label บนภาพ
-                    cv2.putText(cv_image, f"ID:{i}", (x1, y1-30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+                    cv2.putText(cv_image, f"V: {velocity:.1f} m/s", (x1, y1-50), 
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
-                # self.get_logger().info(f"Person {i} at: x={wx:.2f}m, y={wy:.2f}m, yaw={math.degrees(person_yaw):.1f} deg")
-
+            self.marker_pub.publish(all_markers)
+            cv2.imshow("YOLO Multi-Human Detection", cv_image)
+            cv2.waitKey(1)
             # 5. Publish Marker ของทุกคนออกไปพร้อมกันในครั้งเดียว
             self.marker_pub.publish(all_markers)
 
@@ -423,95 +339,9 @@ class HumanDetectionNode(Node):
         # Use the median to eliminate outliers.
         return sorted(valid_ranges)[len(valid_ranges) // 2]
 
-    def get_scripted_ground_truth(self):
-        """Calculate a person's location in real time. (Ground Truth from Script)"""
-        if self.start_sim_time is None:
-            self.start_sim_time = self.get_clock().now()
-            return -8.0, 1.0, 0.0 # start point (x, y, yaw)
-
-        # 1. Calculate the time that has elapsed since the start (in seconds).
-        now = self.get_clock().now()
-        elapsed = (now - self.start_sim_time).nanoseconds / 1e9
-        
-        # 2. Handle the loop (loop lasting 28.6 seconds).
-        t = elapsed % self.trajectory_duration
-
-        # 3. Segments
-        if 0.0 <= t < 13.3: # Move from (-8, 1) to (8, 1)
-            ratio = t / 13.3
-            x = -8.0 + (8.0 - (-8.0)) * ratio
-            y = 1.0
-            yaw = 0.0
-        elif 13.3 <= t < 14.3: # Stop and turn around
-            x = 8.0
-            y = 1.0
-            # rotate from 0 ไป 3.1416
-            ratio = (t - 13.3) / 1.0
-            yaw = 0.0 + (3.1416 - 0.0) * ratio
-        elif 14.3 <= t < 27.6: # Move from (8, 1) to (-8, 1)
-            ratio = (t - 14.3) / (27.6 - 14.3)
-            x = 8.0 + (-8.0 - 8.0) * ratio
-            y = 1.0
-            yaw = 3.1416
-        else: # 27.6 <= t < 28.6 Stop and turn around
-            x = -8.0
-            y = 1.0
-            ratio = (t - 27.6) / (28.6 - 27.6)
-            yaw = 3.1416 + (0.0 - 3.1416) * ratio
-
-        return x, y, yaw
-
     # ──────────────────────────────────────────────────────────────────────
     # Publisher helpers
     # ──────────────────────────────────────────────────────────────────────
-
-    def publish_social_zone_ellipse(self, x, y, yaw, index):
-        """
-        สร้างพื้นที่รูปไข่ (Social Zone) รอบตัวคน
-        x, y: พิกัดในเฟรม Odom
-        yaw: มุมการหันหน้าในหน่วย Radian
-        index: ลำดับของคนที่ตรวจพบ (ใช้เป็น Marker ID)
-        """
-        marker = Marker()
-        marker.header.frame_id = "odom"
-        marker.header.stamp = self.get_clock().now().to_msg()
-        marker.ns = "social_navigation"
-        
-        # 1. ใช้ index ที่รับมาเป็น id เพื่อให้ Marker ของแต่ละคนแยกกัน
-        marker.id = index 
-        
-        marker.type = Marker.CYLINDER
-        marker.action = Marker.ADD
-
-        # 2. กำหนดตำแหน่งและมุม (Pose)
-        marker.pose.position.x = x
-        marker.pose.position.y = y
-        marker.pose.position.z = 0.02
-        
-        # แปลง Yaw เป็น Quaternion
-        q = Quaternion()
-        q.x = 0.0
-        q.y = 0.0
-        q.z = math.sin(yaw / 2.0)
-        q.w = math.cos(yaw / 2.0)
-        marker.pose.orientation = q
-
-        # 3. กำหนดขนาด (Scale)
-        marker.scale.x = 2.4  # ด้านหน้า-หลัง
-        marker.scale.y = 1.6  # ด้านข้าง
-        marker.scale.z = 0.05
-
-        # 4. กำหนดสี
-        marker.color = ColorRGBA(r=1.0, g=0.0, b=0.0, a=0.4)
-
-        # 5. ตั้งค่า Lifetime
-        marker.lifetime = rclpy.duration.Duration(seconds=0.3).to_msg()
-
-        # 6. ส่งข้อมูลเป็น MarkerArray
-        marker_array = MarkerArray()
-        marker_array.markers.append(marker)
-
-        self.marker_pub.publish(marker_array)
 
     def create_egg_marker(self, x, y, yaw, person_id):
 
@@ -568,6 +398,50 @@ class HumanDetectionNode(Node):
 
         return marker
 
+    def create_egg_marker(self, x, y, yaw, person_id, velocity):
+
+        marker = Marker()
+        marker.header.frame_id = "odom"
+        marker.header.stamp = self.get_clock().now().to_msg()
+        marker.ns = "human_social_zones"
+        marker.id = person_id  # สำคัญมาก: ID ต้องต่างกันเพื่อให้ RViz แสดงผลแยกกัน
+        marker.type = Marker.TRIANGLE_LIST
+        marker.action = Marker.ADD
+        
+        # Scale ของ Triangle List ต้องเป็น 1.0
+        marker.scale.x = marker.scale.y = marker.scale.z = 1.0
+        
+        # สีแดงโปร่งแสง
+        marker.color = ColorRGBA(r=1.0, g=0.0, b=0.0, a=0.4)
+        
+        # ─── Dynamic Scale Calculation ───
+        # ด้านหน้า = ค่าเริ่มต้น + (ความเร็ว * ตัวคูณ)
+        dynamic_front_scale = self.min_front_scale + (velocity * self.velocity_factor)
+        back_scale = 0.8
+        side_scale = 1.0
+
+        num_points = 32
+        for i in range(num_points):
+            theta1 = 2.0 * math.pi * i / num_points
+            theta2 = 2.0 * math.pi * (i + 1) / num_points
+            
+            def get_asymmetric_point(theta):
+                # ถ้ามุมอยู่ด้านหน้า (cos > 0) ให้ใช้ dynamic_front_scale
+                r_x = dynamic_front_scale if math.cos(theta) > 0 else back_scale
+                r_y = side_scale
+                
+                px = r_x * math.cos(theta)
+                py = r_y * math.sin(theta)
+                
+                rx = px * math.cos(yaw) - py * math.sin(yaw)
+                ry = px * math.sin(yaw) + py * math.cos(yaw)
+                return Point(x=float(rx + x), y=float(ry + y), z=0.02)
+
+            marker.points.append(Point(x=float(x), y=float(y), z=0.02))
+            marker.points.append(get_asymmetric_point(theta1))
+            marker.points.append(get_asymmetric_point(theta2))
+
+        return marker
 def main(args=None):
     rclpy.init(args=args)
     node = HumanDetectionNode()

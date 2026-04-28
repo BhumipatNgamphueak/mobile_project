@@ -207,7 +207,7 @@
                close to each other without overlapping.
          Crosses the centre at t ≈ 6.7 s  ← same as Human 1
     ═══════════════════════════════════════════════════ -->
-    <!-- <actor name="human_2">
+    <actor name="human_2">
       <skin>
         <filename>/home/talae/.ignition/fuel/fuel.gazebosim.org/mingfei/models/actor/1/meshes/walk.dae</filename>
         <scale>1.0</scale>
@@ -232,9 +232,9 @@
           <waypoint><time>28.6</time><pose> 8 -1.0 1.0 0 0  3.1416</pose></waypoint>
         </trajectory>
       </script>
-    </actor> -->
+    </actor>
 
-    <actor name="human_2">
+    <!-- <actor name="human_2">
       <skin>
         <filename>/home/talae/.ignition/fuel/fuel.gazebosim.org/mingfei/models/actor/1/meshes/walk.dae</filename>
         <scale>1.0</scale>
@@ -251,7 +251,7 @@
           <waypoint><time>0.0</time> <pose>0 -1.0 1.0 0 0  0.0</pose></waypoint>
         </trajectory>
       </script>
-    </actor>
+    </actor> -->
 
   </world>
 </sdf>
