@@ -1,0 +1,32 @@
+{
+    "python.autoComplete.extraPaths": [
+        "/home/talae/AMR_LAB1_ws/install/LAB1_package/local/lib/python3.10/dist-packages",
+        "/home/talae/ros2_ws/install/turtlesim_plus_interfaces/local/lib/python3.10/dist-packages",
+        "/home/talae/ros2_ws/install/turtlesim_plus/local/lib/python3.10/dist-packages",
+        "/home/talae/ros2_ws/install/turtle_bringup/local/lib/python3.10/dist-packages",
+        "/home/talae/ros2_ws/install/lecture2/local/lib/python3.10/dist-packages",
+        "/home/talae/ros2_ws/install/lab1_interfaces/local/lib/python3.10/dist-packages",
+        "/home/talae/ros2_ws/install/lab1/local/lib/python3.10/dist-packages",
+        "/home/talae/ros2_ws/install/example_description/local/lib/python3.10/dist-packages",
+        "/home/talae/ros2_ws/install/dummy_gazebo/local/lib/python3.10/dist-packages",
+        "/home/talae/ros2_ws/install/dummy_description/local/lib/python3.10/dist-packages",
+        "/home/talae/ros2_ws/install/controller_interfaces/local/lib/python3.10/dist-packages",
+        "/opt/ros/humble/lib/python3.10/site-packages",
+        "/opt/ros/humble/local/lib/python3.10/dist-packages"
+    ],
+    "python.analysis.extraPaths": [
+        "/home/talae/AMR_LAB1_ws/install/LAB1_package/local/lib/python3.10/dist-packages",
+        "/home/talae/ros2_ws/install/turtlesim_plus_interfaces/local/lib/python3.10/dist-packages",
+        "/home/talae/ros2_ws/install/turtlesim_plus/local/lib/python3.10/dist-packages",
+        "/home/talae/ros2_ws/install/turtle_bringup/local/lib/python3.10/dist-packages",
+        "/home/talae/ros2_ws/install/lecture2/local/lib/python3.10/dist-packages",
+        "/home/talae/ros2_ws/install/lab1_interfaces/local/lib/python3.10/dist-packages",
+        "/home/talae/ros2_ws/install/lab1/local/lib/python3.10/dist-packages",
+        "/home/talae/ros2_ws/install/example_description/local/lib/python3.10/dist-packages",
+        "/home/talae/ros2_ws/install/dummy_gazebo/local/lib/python3.10/dist-packages",
+        "/home/talae/ros2_ws/install/dummy_description/local/lib/python3.10/dist-packages",
+        "/home/talae/ros2_ws/install/controller_interfaces/local/lib/python3.10/dist-packages",
+        "/opt/ros/humble/lib/python3.10/site-packages",
+        "/opt/ros/humble/local/lib/python3.10/dist-packages"
+    ]
+}

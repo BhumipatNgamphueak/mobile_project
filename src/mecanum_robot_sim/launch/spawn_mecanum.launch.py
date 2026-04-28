@@ -139,6 +139,7 @@ def generate_launch_description():
         executable='image_bridge',
         name='camera_image_bridge',
         arguments=['/front_camera'],
+        remappings=[('/front_camera', '/front_camera/image_raw')],
         output='screen',
     )
 

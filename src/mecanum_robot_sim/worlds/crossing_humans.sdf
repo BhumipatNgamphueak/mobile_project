@@ -175,11 +175,11 @@
     ═══════════════════════════════════════════════════ -->
     <actor name="human_1">
       <skin>
-        <filename>/home/prime/.ignition/fuel/fuel.gazebosim.org/mingfei/models/actor/1/meshes/walk.dae</filename>
+        <filename>/home/talae/.ignition/fuel/fuel.gazebosim.org/mingfei/models/actor/1/meshes/walk.dae</filename>
         <scale>1.0</scale>
       </skin>
       <animation name="walk">
-        <filename>/home/prime/.ignition/fuel/fuel.gazebosim.org/mingfei/models/actor/1/meshes/walk.dae</filename>
+        <filename>/home/talae/.ignition/fuel/fuel.gazebosim.org/mingfei/models/actor/1/meshes/walk.dae</filename>
         <interpolate_x>true</interpolate_x>
       </animation>
       <script>
@@ -187,19 +187,19 @@
         <delay_start>1.0</delay_start>
         <auto_start>true</auto_start>
         <trajectory id="0" type="walk" >
-          <!-- Leg 1: walk east -->
+
           <waypoint><time>0.0</time> <pose>-8  1.0 1.0 0 0  0.0</pose></waypoint>
           <waypoint><time>13.3</time><pose> 8  1.0 1.0 0 0  0.0</pose></waypoint>
-          <!-- Pause & turn at east end -->
+
           <waypoint><time>14.3</time><pose> 8  1.0 1.0 0 0  3.1416</pose></waypoint>
-          <!-- Leg 2: walk west (return) -->
+
           <waypoint><time>27.6</time><pose>-8  1.0 1.0 0 0  3.1416</pose></waypoint>
-          <!-- Pause & turn at west end (close loop) -->
+
           <waypoint><time>28.6</time><pose>-8  1.0 1.0 0 0  0.0</pose></waypoint>
         </trajectory>
       </script>
     </actor>
-
+    
     <!-- ═══════════════════════════════════════════════════
          HUMAN 2 – walks WEST  (right → left)
          Path: (8, -1.0) ──────────────→ (-8, -1.0)
@@ -207,13 +207,13 @@
                close to each other without overlapping.
          Crosses the centre at t ≈ 6.7 s  ← same as Human 1
     ═══════════════════════════════════════════════════ -->
-    <actor name="human_2">
+    <!-- <actor name="human_2">
       <skin>
-        <filename>/home/prime/.ignition/fuel/fuel.gazebosim.org/mingfei/models/actor/1/meshes/walk.dae</filename>
+        <filename>/home/talae/.ignition/fuel/fuel.gazebosim.org/mingfei/models/actor/1/meshes/walk.dae</filename>
         <scale>1.0</scale>
       </skin>
       <animation name="walk">
-        <filename>/home/prime/.ignition/fuel/fuel.gazebosim.org/mingfei/models/actor/1/meshes/walk.dae</filename>
+        <filename>/home/talae/.ignition/fuel/fuel.gazebosim.org/mingfei/models/actor/1/meshes/walk.dae</filename>
         <interpolate_x>true</interpolate_x>
       </animation>
       <script>
@@ -221,15 +221,34 @@
         <delay_start>1.0</delay_start>
         <auto_start>true</auto_start>
         <trajectory id="0" type="walk" >
-          <!-- Leg 1: walk west -->
+
           <waypoint><time>0.0</time> <pose> 8 -1.0 1.0 0 0  3.1416</pose></waypoint>
           <waypoint><time>13.3</time><pose>-8 -1.0 1.0 0 0  3.1416</pose></waypoint>
-          <!-- Pause & turn at west end -->
+
           <waypoint><time>14.3</time><pose>-8 -1.0 1.0 0 0  0.0</pose></waypoint>
-          <!-- Leg 2: walk east (return) -->
+
           <waypoint><time>27.6</time><pose> 8 -1.0 1.0 0 0  0.0</pose></waypoint>
-          <!-- Pause & turn at east end (close loop) -->
+
           <waypoint><time>28.6</time><pose> 8 -1.0 1.0 0 0  3.1416</pose></waypoint>
+        </trajectory>
+      </script>
+    </actor> -->
+
+    <actor name="human_2">
+      <skin>
+        <filename>/home/talae/.ignition/fuel/fuel.gazebosim.org/mingfei/models/actor/1/meshes/walk.dae</filename>
+        <scale>1.0</scale>
+      </skin>
+      <animation name="walk">
+        <filename>/home/talae/.ignition/fuel/fuel.gazebosim.org/mingfei/models/actor/1/meshes/walk.dae</filename>
+        <interpolate_x>true</interpolate_x>
+      </animation>
+      <script>
+        <loop>true</loop>
+        <delay_start>1.0</delay_start>
+        <auto_start>true</auto_start>
+        <trajectory id="0" type="walk" >
+          <waypoint><time>0.0</time> <pose>0 -1.0 1.0 0 0  0.0</pose></waypoint>
         </trajectory>
       </script>
     </actor>
