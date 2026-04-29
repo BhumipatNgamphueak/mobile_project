@@ -495,14 +495,15 @@ class PathPlanningNode(Node):
                 warm_arc.append(warm_arc[-1] + math.hypot(
                     warm_xs[k] - warm_xs[k - 1],
                     warm_ys[k] - warm_ys[k - 1]))
-            L_warm = warm_arc[-1]
+            L_warm = warm_arc[-1] # old length
 
             new_arc = [0.0]
             for k in range(1, n):
                 new_arc.append(new_arc[-1] + math.hypot(
                     xs[k] - xs[k - 1], ys[k] - ys[k - 1]))
-            L_new = new_arc[-1]
+            L_new = new_arc[-1]  # new length
 
+            # Interpolating new length
             if L_warm > 1e-3 and L_new > 1e-3:
                 for i in range(1, n - 1):
                     target = (new_arc[i] / L_new) * L_warm
