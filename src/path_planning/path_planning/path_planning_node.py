@@ -2,20 +2,18 @@
 """
 path_planning_node.py
 =====================
-TEB-style local planner with polygon obstacles.
+TEB-style local planner with point obstacles.
 
 Pipeline (one cycle):
-  1. Costmap -> polygon obstacles
-       BFS-cluster lethal cells in a window around the robot, then take the
-       convex hull of each cluster's world-frame centers.
-       (nav2 analog: costmap_converter::CostmapToPolygonsDBSMCCH)
+  1. Costmap -> point obstacles
+       Extract occupied cells in a window around the robot.
   2. Local segment extraction
        Prune behind the robot, then take a lookahead window of the global
        path. Warm-started from the previous optimised band so the trajectory
        evolves smoothly across cycles.
   3. TEB optimisation
        Gradient descent on the elastic band against
-         - polygon obstacle edges (outward force inside an inflation zone)
+         - point obstacles (outward force inside an inflation zone)
          - smoothness (pull toward midpoint of neighbours)
        Endpoints fixed.
   4. Holonomic velocity extraction
@@ -31,7 +29,7 @@ Outputs
 -------
 /cmd_vel             geometry_msgs/TwistStamped       velocity command
 /planned_path        nav_msgs/Path                    optimised band (RViz)
-/obstacle_polygons   visualization_msgs/MarkerArray   extracted polygons (RViz)
+/obstacle_points     visualization_msgs/MarkerArray   extracted points (RViz)
 """
 
 import math
@@ -56,7 +54,7 @@ class PathPlanningNode(Node):
 
         # ── General parameters ────────────────────────────────────────────
         self.planning_freq          = 10     # Hz
-        self.lookahead_dist         = 15.0   # m — local segment length
+        self.lookahead_dist         = 4.0   # m — local segment length
         self.min_waypoints_required = 2
         self.goal_tolerance         = 0.4    # m
 
@@ -64,14 +62,17 @@ class PathPlanningNode(Node):
         self.teb_n_iter      = 60      # gradient descent iterations / cycle
         self.teb_w_obs       = 50.0 # 50.0    # obstacle repulsion weight
         self.teb_w_smooth    = 2.0     # elastic band weight
-        self.teb_inflation   = 1.0 # 0.5     # m — repulsion radius around polygons
+        self.teb_inflation   = 1.0 # 0.5     # m — repulsion radius around points
         self.teb_step        = 0.05    # gradient step
         self.teb_max_delta   = 0.10    # m — clamp per-iteration movement
         self.v_max           = 1.5     # m/s
 
-        # ── Costmap-to-polygons parameters ────────────────────────────────
+        self.teb_w_time      = 1.0     # weight to minimize total time
+        self.teb_w_max_vel   = 10.0    # weight to penalize exceeding v_max
+        self.teb_max_delta_t = 0.1     # clamp per-iteration dt movement
+
+        # ── Costmap-to-points parameters ────────────────────────────────
         self.obstacle_threshold = 60    # cost >= this -> obstacle cell
-        self.cluster_min_cells  = 3     # filter noise clusters
         self.search_margin      = 8.0   # m beyond lookahead to scan
 
         # ── Subscribers ───────────────────────────────────────────────────
@@ -82,7 +83,7 @@ class PathPlanningNode(Node):
         # ── Publishers ────────────────────────────────────────────────────
         self.cmd_vel_pub = self.create_publisher(TwistStamped, '/cmd_vel',           10)
         self.path_pub    = self.create_publisher(Path,         '/planned_path',      10)
-        self.polygon_pub = self.create_publisher(MarkerArray,  '/obstacle_polygons', 10)
+        self.obstacle_pub = self.create_publisher(MarkerArray,  '/obstacle_points',   10)
 
         # ── Internal state ────────────────────────────────────────────────
         self._robot_pose: Pose | None             = None
@@ -94,12 +95,13 @@ class PathPlanningNode(Node):
         # Warm start from previous optimised band.
         self._warm_xs: list[float] | None = None
         self._warm_ys: list[float] | None = None
+        self._warm_dts: list[float] | None = None
 
-        # Polygons extracted from current costmap (set each cycle).
-        self._polygons: list[list[tuple[float, float]]] = []
+        # Points extracted from current costmap (set each cycle).
+        self._obstacle_points: list[tuple[float, float]] = []
 
         self.create_timer(1.0 / self.planning_freq, self._replan)
-        self.get_logger().info('PathPlanningNode (TEB polygon-style) started')
+        self.get_logger().info('PathPlanningNode (TEB point-style) started')
 
     # ──────────────────────────────────────────────────────────────────────
     # Callbacks
@@ -132,6 +134,7 @@ class PathPlanningNode(Node):
         self._prune_index = 0
         self._warm_xs     = None
         self._warm_ys     = None
+        self._warm_dts    = None
         self.get_logger().info(f'New goal received ({len(msg.poses)} waypoints)')
 
     # ──────────────────────────────────────────────────────────────────────
@@ -148,9 +151,9 @@ class PathPlanningNode(Node):
             self._pub_stop()
             return
 
-        # 1. Costmap -> polygon obstacles
-        self._polygons = self._costmap_to_polygons()
-        self._publish_polygons()
+        # 1. Costmap -> point obstacles
+        self._obstacle_points = self._costmap_to_points()
+        self._publish_points()
 
         # 2. Reference segment from global path
         self._prune_index = self._find_closest_index()
@@ -159,28 +162,25 @@ class PathPlanningNode(Node):
             return
 
         # 3. TEB optimisation
-        opt_xs, opt_ys = self._teb_optimize(segment)
+        opt_xs, opt_ys, opt_dts = self._teb_optimize(segment)
 
         # 4. Cache for next cycle's warm start
         self._warm_xs = opt_xs[:]
         self._warm_ys = opt_ys[:]
+        self._warm_dts = opt_dts[:]
 
         # 5. Publish optimised path & velocity
         self._publish_path(opt_xs, opt_ys, segment[0].header.frame_id)
-        self.cmd_vel_pub.publish(self._compute_cmd_vel(opt_xs, opt_ys))
+        self.cmd_vel_pub.publish(self._compute_cmd_vel(opt_xs, opt_ys, opt_dts))
 
     # ──────────────────────────────────────────────────────────────────────
-    # Costmap -> Polygons (costmap_converter style)
+    # Costmap -> Points
     # ──────────────────────────────────────────────────────────────────────
 
-    def _costmap_to_polygons(self) -> list[list[tuple[float, float]]]:
+    def _costmap_to_points(self) -> list[tuple[float, float]]:
         """
-        Cluster lethal cells with 8-connected BFS, then convex-hull each
-        cluster's world-frame centers. Equivalent in spirit to nav2's
-        costmap_converter::CostmapToPolygonsDBSMCCH (DBSCAN + convex hull),
-        with grid connectivity instead of DBSCAN for speed in pure Python.
-
-        Costmap is in odom frame, so polygons are returned in odom frame.
+        Extract occupied cells as point obstacles.
+        Costmap is in odom frame, so points are returned in odom frame.
         """
         cm   = self._local_costmap
         info = cm.info
@@ -201,245 +201,49 @@ class PathPlanningNode(Node):
         j_lo = max(0, cy_robot - margin_cells)
         j_hi = min(h, cy_robot + margin_cells + 1)
 
-        # 1. Collect occupied cells in the window.
         threshold = self.obstacle_threshold
-        occupied: set[tuple[int, int]] = set()
+        points = []
         for j in range(j_lo, j_hi):
             base = j * w
             for i in range(i_lo, i_hi):
                 if data[base + i] >= threshold:
-                    occupied.add((i, j))
-
-        if not occupied:
-            return []
-
-        # 2. BFS clustering with 8-connectivity.
-        polygons: list[list[tuple[float, float]]] = []
-        visited: set[tuple[int, int]] = set()
-        neighbors = ((-1,-1),(-1,0),(-1,1),(0,-1),(0,1),(1,-1),(1,0),(1,1))
-
-        for start in occupied:
-            if start in visited:
-                continue
-            cluster = []
-            stack = [start]
-            while stack:
-                c = stack.pop()
-                if c in visited:
-                    continue
-                visited.add(c)
-                cluster.append(c)
-                ci, cj = c
-                for di, dj in neighbors:
-                    n = (ci + di, cj + dj)
-                    if n in occupied and n not in visited:
-                        stack.append(n)
-
-            if len(cluster) < self.cluster_min_cells:
-                continue
-
-            # 3. Convex hull of cluster (world frame).
-            world_pts = [(ox + (i + 0.5) * res, oy + (j + 0.5) * res)
-                         for i, j in cluster]
-            hull = self._convex_hull(world_pts)
-            if len(hull) >= 2:
-                polygons.append(hull)
-
-        return polygons
-
-    @staticmethod
-    def _convex_hull(points: list[tuple[float, float]]) -> list[tuple[float, float]]:
-        """Andrew's monotone chain. Returns CCW hull (open polyline, no repeat)."""
-        pts = sorted(set(points))
-        if len(pts) <= 2:
-            return pts
-
-        def cross(o, a, b):
-            return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
-
-        lower = []
-        for p in pts:
-            while len(lower) >= 2 and cross(lower[-2], lower[-1], p) <= 0:
-                lower.pop()
-            lower.append(p)
-        upper = []
-        for p in reversed(pts):
-            while len(upper) >= 2 and cross(upper[-2], upper[-1], p) <= 0:
-                upper.pop()
-            upper.append(p)
-        return lower[:-1] + upper[:-1]
+                    wx = ox + (i + 0.5) * res
+                    wy = oy + (j + 0.5) * res
+                    points.append((wx, wy))
+        return points
 
     # ──────────────────────────────────────────────────────────────────────
-    # Polygon distance / obstacle force
+    # Point distance / obstacle force
     # ──────────────────────────────────────────────────────────────────────
 
     def _obstacle_force(self, x: float, y: float) -> tuple[float, float]:
         """
-        Returns the repulsive force on a waypoint from the closest polygon.
-        Mirrors TEB's PolygonObstacle obstacle edge:
-          - force = 0 outside the inflation radius
-          - force grows linearly with penetration depth
-          - direction: away from nearest polygon-boundary point
-        Inside a polygon -> strong push toward the nearest boundary (escape).
+        Returns the repulsive force on a waypoint from the closest point.
         """
-        if not self._polygons:
+        if not self._obstacle_points:
             return 0.0, 0.0
 
-        best_d      = float('inf')
-        best_cx     = 0.0
-        best_cy     = 0.0
-        best_inside = False
+        best_d = float('inf')
+        best_px = 0.0
+        best_py = 0.0
 
-        for poly in self._polygons:
-            d, cx, cy, inside = self._point_polygon_signed_dist(x, y, poly)
-            # Once we know we're inside any polygon, prefer escaping it.
-            if inside:
-                if not best_inside or d < best_d:
-                    best_d, best_cx, best_cy, best_inside = d, cx, cy, True
-            elif not best_inside and d < best_d:
-                best_d, best_cx, best_cy = d, cx, cy
-
-        if best_inside:
-            # Escape direction: toward the nearest boundary point.
-            vx, vy = best_cx - x, best_cy - y
-            m = math.hypot(vx, vy)
-            if m < 1e-9:
-                return self.teb_inflation, 0.0
-            return self.teb_inflation * vx / m, self.teb_inflation * vy / m
+        for px, py in self._obstacle_points:
+            d = math.hypot(x - px, y - py)
+            if d < best_d:
+                best_d = d
+                best_px = px
+                best_py = py
 
         if best_d >= self.teb_inflation:
             return 0.0, 0.0
 
-        # Outside, but inside inflation zone: push away from boundary.
-        vx, vy = x - best_cx, y - best_cy
+        # Push away from boundary.
+        vx, vy = x - best_px, y - best_py
         m = math.hypot(vx, vy)
         if m < 1e-9:
             return 0.0, 0.0
         mag = self.teb_inflation - best_d
         return mag * vx / m, mag * vy / m
-
-    @staticmethod
-    def _point_polygon_signed_dist(
-            x: float, y: float,
-            poly: list[tuple[float, float]]
-    ) -> tuple[float, float, float, bool]:
-        """
-        Returns (distance_to_boundary, closest_x, closest_y, inside).
-        Distance is unsigned distance to polygon boundary.
-        `inside` is True when (x, y) is strictly inside the polygon.
-        """
-        n = len(poly)
-        if n == 0:
-            return float('inf'), x, y, False
-        if n == 1:
-            return math.hypot(x - poly[0][0], y - poly[0][1]), poly[0][0], poly[0][1], False
-
-        # Closest point on polygon boundary.
-        best_d = float('inf')
-        best_x = x
-        best_y = y
-        for i in range(n):
-            x1, y1 = poly[i]
-            x2, y2 = poly[(i + 1) % n]
-            dx, dy = x2 - x1, y2 - y1
-            l2 = dx * dx + dy * dy
-            if l2 < 1e-12:
-                cx, cy = x1, y1
-            else:
-                t = ((x - x1) * dx + (y - y1) * dy) / l2
-                if t < 0.0:
-                    t = 0.0
-                elif t > 1.0:
-                    t = 1.0
-                cx, cy = x1 + t * dx, y1 + t * dy
-            d = math.hypot(x - cx, y - cy)
-            if d < best_d:
-                best_d, best_x, best_y = d, cx, cy
-
-        # Inside test (ray casting). Skip for degenerate polygons.
-        inside = False
-        if n >= 3:
-            j = n - 1
-            for i in range(n):
-                xi, yi = poly[i]
-                xj, yj = poly[j]
-                if ((yi > y) != (yj > y)) and \
-                   (x < (xj - xi) * (y - yi) / (yj - yi + 1e-12) + xi):
-                    inside = not inside
-                j = i
-
-        return best_d, best_x, best_y, inside
-
-    # ──────────────────────────────────────────────────────────────────────
-    # Homotopy pre-routing
-    # ──────────────────────────────────────────────────────────────────────
-
-    def _preroute_around_polygons(self,
-                                  xs: list[float],
-                                  ys: list[float]) -> None:
-        """
-        For each polygon containing band nodes, displace the affected
-        nodes to one consistent side of the polygon (the side with the
-        shorter perpendicular detour). This forces the band into a valid
-        homotopy class so the local optimiser doesn't have to choose
-        between left/right under symmetric obstacle forces.
-
-        nav2 TEB does this implicitly by exploring multiple homotopy
-        classes in parallel; here we approximate it with a single, stable
-        choice per polygon per cycle.
-        """
-        n = len(xs)
-        if n < 3:
-            return
-
-        for poly in self._polygons:
-            if len(poly) < 3:
-                continue
-
-            # Find interior band nodes inside this polygon (skip endpoints).
-            inside_idx = []
-            for i in range(1, n - 1):
-                _, _, _, inside = self._point_polygon_signed_dist(xs[i], ys[i], poly)
-                if inside:
-                    inside_idx.append(i)
-            if not inside_idx:
-                continue
-
-            i_first = inside_idx[0]
-            i_last  = inside_idx[-1]
-            i_pre   = max(0,     i_first - 1)
-            i_post  = min(n - 1, i_last  + 1)
-
-            # Band direction across the polygon.
-            bx = xs[i_post] - xs[i_pre]
-            by = ys[i_post] - ys[i_pre]
-            bm = math.hypot(bx, by)
-            if bm < 1e-6:
-                continue
-            bx, by = bx / bm, by / bm
-
-            # Perpendicular candidates: (-by, bx) and (by, -bx).
-            # Reference point: midpoint between first and last inside nodes.
-            cxr = (xs[i_first] + xs[i_last]) / 2.0
-            cyr = (ys[i_first] + ys[i_last]) / 2.0
-
-            max_left  = 0.0   # extent in direction (-by, bx)
-            max_right = 0.0   # extent in direction ( by,-bx)
-            for vx, vy in poly:
-                d_left  = (vx - cxr) * (-by) + (vy - cyr) * bx
-                d_right = (vx - cxr) * by   + (vy - cyr) * (-bx)
-                if d_left  > max_left:  max_left  = d_left
-                if d_right > max_right: max_right = d_right
-
-            if max_left <= max_right:
-                perp_x, perp_y, extent = -by, bx, max_left
-            else:
-                perp_x, perp_y, extent =  by, -bx, max_right
-
-            offset = extent + self.teb_inflation + 0.1
-            for i in inside_idx:
-                xs[i] += offset * perp_x
-                ys[i] += offset * perp_y
 
     # ──────────────────────────────────────────────────────────────────────
     # TEB optimisation
@@ -447,9 +251,9 @@ class PathPlanningNode(Node):
 
     def _teb_optimize(self,
                       segment: list[PoseStamped]
-                      ) -> tuple[list[float], list[float]]:
+                      ) -> tuple[list[float], list[float], list[float]]:
         """
-        Elastic band optimisation against polygon obstacles.
+        Elastic band optimisation against point obstacles.
 
         Anchoring:
           The band is anchored at the *actual* robot pose (xs[0]) — not at
@@ -485,11 +289,17 @@ class PathPlanningNode(Node):
 
         n = len(xs)
         if n < 2:
-            return xs, ys
+            return xs, ys, [0.1]
+
+        # Initialize time intervals based on max velocity
+        dts = []
+        for i in range(n - 1):
+            dist = math.hypot(xs[i + 1] - xs[i], ys[i + 1] - ys[i])
+            dts.append(max(0.01, dist / self.v_max))
 
         # ── Warm start: arc-length re-projection of previous band ────────
-        if self._warm_xs and self._warm_ys and len(self._warm_xs) >= 2:
-            warm_xs, warm_ys = self._warm_xs, self._warm_ys
+        if self._warm_xs and self._warm_ys and self._warm_dts and len(self._warm_xs) >= 2:
+            warm_xs, warm_ys, warm_dts = self._warm_xs, self._warm_ys, self._warm_dts
             warm_arc = [0.0]
             for k in range(1, len(warm_xs)):
                 warm_arc.append(warm_arc[-1] + math.hypot(
@@ -517,21 +327,27 @@ class PathPlanningNode(Node):
                                 xs[i] = warm_xs[k] + a * (warm_xs[k + 1] - warm_xs[k])
                                 ys[i] = warm_ys[k] + a * (warm_ys[k + 1] - warm_ys[k])
                             break
+                # Simple interpolation for dt based on relative lengths
+                len_ratio = L_new / L_warm
+                for i in range(min(len(dts), len(warm_dts))):
+                    dts[i] = warm_dts[i] * len_ratio
 
-        # ── Homotopy pre-routing ─────────────────────────────────────────
-        # Local optimization cannot escape a polygon that fully contains
-        # the band — the obstacle force balances on both sides and the
-        # band gets pinned. Push any band nodes still inside a polygon
-        # to one consistent side of that polygon (whichever has the
-        # shorter detour) before optimising.
-        self._preroute_around_polygons(xs, ys)
-
-        step      = self.teb_step
-        max_delta = self.teb_max_delta
-        w_obs     = self.teb_w_obs
-        w_smooth  = self.teb_w_smooth
+        step        = self.teb_step
+        max_delta   = self.teb_max_delta
+        max_delta_t = self.teb_max_delta_t
+        w_obs       = self.teb_w_obs
+        w_smooth    = self.teb_w_smooth
+        w_time      = self.teb_w_time
+        w_max_vel   = self.teb_w_max_vel
+        v_max       = self.v_max
 
         for _ in range(self.teb_n_iter):
+            # Accumulate forces
+            fx = [0.0] * n
+            fy = [0.0] * n
+            fdt = [0.0] * (n - 1)
+
+            # 1. Obstacle & Smoothness forces
             for i in range(1, n - 1):
                 fx_obs, fy_obs = self._obstacle_force(xs[i], ys[i])
 
@@ -539,30 +355,71 @@ class PathPlanningNode(Node):
                 f_sx = (xs[i - 1] + xs[i + 1]) / 2.0 - xs[i]
                 f_sy = (ys[i - 1] + ys[i + 1]) / 2.0 - ys[i]
 
-                dx = step * (w_obs * fx_obs + w_smooth * f_sx)
-                dy = step * (w_obs * fy_obs + w_smooth * f_sy)
+                fx[i] += w_obs * fx_obs + w_smooth * f_sx
+                fy[i] += w_obs * fy_obs + w_smooth * f_sy
 
+            # 2. Velocity & Time forces
+            for i in range(n - 1):
+                dx = xs[i + 1] - xs[i]
+                dy = ys[i + 1] - ys[i]
+                dist = math.hypot(dx, dy)
+                dt = dts[i]
+                v = dist / dt
+
+                # Time force (fastest path objective)
+                fdt[i] -= w_time
+
+                # Velocity limit penalty
+                if v > v_max:
+                    delta_v = v - v_max
+                    # Force on dt: derivative of C_v w.r.t dt is -weight * delta_v * (v / dt)
+                    # We negate it for gradient descent update
+                    fdt[i] += w_max_vel * delta_v * (v / dt)
+
+                    if v > 1e-6:
+                        # Force on x, y: derivative of C_v w.r.t x_i
+                        # We negate it for gradient descent update
+                        fx_vel = w_max_vel * delta_v * (dx / (v * dt * dt))
+                        fy_vel = w_max_vel * delta_v * (dy / (v * dt * dt))
+                        fx[i] += fx_vel
+                        fy[i] += fy_vel
+                        fx[i + 1] -= fx_vel
+                        fy[i + 1] -= fy_vel
+
+            # 3. Apply updates
+            for i in range(1, n - 1):
+                dx = step * fx[i]
+                dy = step * fy[i]
                 mag = math.hypot(dx, dy)
                 if mag > max_delta:
                     dx *= max_delta / mag
                     dy *= max_delta / mag
-
                 xs[i] += dx
                 ys[i] += dy
 
-        return xs, ys
+            for i in range(n - 1):
+                ddt = step * fdt[i]
+                if ddt > max_delta_t:
+                    ddt = max_delta_t
+                elif ddt < -max_delta_t:
+                    ddt = -max_delta_t
+                dts[i] += ddt
+                dts[i] = max(0.01, dts[i]) # clamp to prevent negative time
+
+        return xs, ys, dts
 
     # ──────────────────────────────────────────────────────────────────────
-    # Velocity extraction (holonomic vector pursuit)
+    # Velocity extraction (True TEB execution)
     # ──────────────────────────────────────────────────────────────────────
     def _compute_cmd_vel(self,
                          opt_xs: list[float],
-                         opt_ys: list[float]) -> TwistStamped:
+                         opt_ys: list[float],
+                         opt_dts: list[float]) -> TwistStamped:
         cmd = TwistStamped()
         cmd.header.stamp    = self.get_clock().now().to_msg()
         cmd.header.frame_id = 'base_link'
 
-        if not opt_xs or len(opt_xs) < 2:
+        if not opt_xs or len(opt_xs) < 2 or not opt_dts:
             return cmd
 
         rx  = self._robot_pose.position.x
@@ -573,30 +430,32 @@ class PathPlanningNode(Node):
         cos_y = math.cos(yaw)
         sin_y = math.sin(yaw)
 
-        # 1. Lookahead point on the optimised band.
-        lookahead = 0.5
-        tx, ty = opt_xs[-1], opt_ys[-1]
-        for ox, oy in zip(opt_xs, opt_ys):
-            if math.hypot(ox - rx, oy - ry) >= lookahead:
-                tx, ty = ox, oy
-                break
+        # 1. Decelerate near goal.
+        d_goal = euclidean(self._robot_pose, self._global_path.poses[-1].pose)
+        
+        # 2. True TEB velocity: velocity of the first segment
+        # In a real TEB, the robot is meant to follow the trajectory encoded in the first segment
+        dxw = opt_xs[1] - opt_xs[0]
+        dyw = opt_ys[1] - opt_ys[0]
+        dt = opt_dts[0]
 
-        # 2. Body-frame vector to lookahead.
-        dxw = tx - rx
-        dyw = ty - ry
-        xl =  dxw * cos_y + dyw * sin_y
-        yl = -dxw * sin_y + dyw * cos_y
-        L  = math.hypot(xl, yl)
-        if L < 1e-6:
-            return cmd
+        # Convert world-frame velocity to body-frame velocity
+        vx_world = dxw / dt
+        vy_world = dyw / dt
 
-        # 3. Decelerate near goal.
-        d_goal   = euclidean(self._robot_pose, self._global_path.poses[-1].pose)
-        v_target = min(self.v_max, max(0.05, d_goal * 1.5))
+        vx_body =  vx_world * cos_y + vy_world * sin_y
+        vy_body = -vx_world * sin_y + vy_world * cos_y
 
-        # 4. Holonomic distribution (slide directly toward lookahead).
-        cmd.twist.linear.x  = v_target * (xl / L)
-        cmd.twist.linear.y  = v_target * (yl / L)
+        v_mag = math.hypot(vx_body, vy_body)
+
+        # 3. Apply deceleration near goal and ensure we do not exceed v_max
+        v_target_limit = min(self.v_max, max(0.05, d_goal * 1.5))
+        if v_mag > v_target_limit:
+            vx_body *= v_target_limit / v_mag
+            vy_body *= v_target_limit / v_mag
+
+        cmd.twist.linear.x  = vx_body
+        cmd.twist.linear.y  = vy_body
         cmd.twist.angular.z = 0.0
         return cmd
 
@@ -610,39 +469,37 @@ class PathPlanningNode(Node):
     # Visualization
     # ──────────────────────────────────────────────────────────────────────
 
-    def _publish_polygons(self):
+    def _publish_points(self):
         ma = MarkerArray()
         frame = self._local_costmap.header.frame_id
         stamp = self.get_clock().now().to_msg()
 
-        # Clear previous polygons before drawing new ones.
+        # Clear previous points before drawing new ones.
         clear = Marker()
         clear.header.frame_id = frame
         clear.action = Marker.DELETEALL
         ma.markers.append(clear)
 
-        for idx, poly in enumerate(self._polygons):
+        if self._obstacle_points:
             m = Marker()
             m.header.frame_id = frame
             m.header.stamp    = stamp
-            m.ns              = 'obstacle_polygons'
-            m.id              = idx
-            m.type            = Marker.LINE_STRIP
+            m.ns              = 'obstacle_points'
+            m.id              = 0
+            m.type            = Marker.POINTS
             m.action          = Marker.ADD
             m.scale.x         = 0.05
+            m.scale.y         = 0.05
             m.color           = ColorRGBA(r=1.0, g=0.2, b=0.2, a=1.0)
             m.pose.orientation.w = 1.0
-            for (px, py) in poly:
+            
+            for (px, py) in self._obstacle_points:
                 pt = Point()
                 pt.x, pt.y, pt.z = px, py, 0.0
                 m.points.append(pt)
-            if len(poly) >= 3:
-                first = Point()
-                first.x, first.y, first.z = poly[0][0], poly[0][1], 0.0
-                m.points.append(first)
             ma.markers.append(m)
 
-        self.polygon_pub.publish(ma)
+        self.obstacle_pub.publish(ma)
 
     def _publish_path(self, xs: list[float], ys: list[float], frame: str):
         n = len(xs)
