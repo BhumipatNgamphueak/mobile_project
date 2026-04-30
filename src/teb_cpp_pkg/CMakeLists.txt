@@ -9,8 +9,20 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
 
-add_executable(cpp_node src/cpp_node.cpp)
+# Find g2o
+find_package(g2o REQUIRED)
+# Sometimes g2o does not provide a proper target, so we include its dirs explicitly
+include_directories(/opt/ros/humble/include)
+
+find_package(Eigen3 REQUIRED)
+include_directories(${EIGEN3_INCLUDE_DIR})
+
+find_package(glog REQUIRED)
+
+add_executable(cpp_node src/teb_planner_node.cpp)
 target_include_directories(cpp_node PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
@@ -19,6 +31,15 @@ ament_target_dependencies(
   cpp_node
   "rclcpp"
   "std_msgs"
+  "geometry_msgs"
+  "nav_msgs"
+)
+target_link_libraries(cpp_node
+  g2o::core
+  g2o::stuff
+  g2o::types_slam2d
+  g2o::solver_eigen
+  glog::glog
 )
 
 install(TARGETS cpp_node

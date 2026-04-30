@@ -1,0 +1,218 @@
+Starting >>> teb_cpp_pkg
+--- stderr: teb_cpp_pkg
+In file included from /opt/ros/humble/include/g2o/core/sparse_optimizer.h:33,
+                 from /home/pavaris/mobile_project/src/teb_cpp_pkg/src/teb_planner_node.cpp:13:
+/opt/ros/humble/include/g2o/core/optimizable_graph.h:182:6: warning: extra ‘;’ [-Wpedantic]
+  182 |     };
+      |      ^
+      |      -
+/opt/ros/humble/include/g2o/core/optimizable_graph.h:221:6: warning: extra ‘;’ [-Wpedantic]
+  221 |     };
+      |      ^
+      |      -
+/opt/ros/humble/include/g2o/core/optimizable_graph.h:257:6: warning: extra ‘;’ [-Wpedantic]
+  257 |     };
+      |      ^
+      |      -
+/opt/ros/humble/include/g2o/core/optimizable_graph.h:296:6: warning: extra ‘;’ [-Wpedantic]
+  296 |     };
+      |      ^
+      |      -
+In file included from /opt/ros/humble/include/g2o/core/sparse_block_matrix.h:275,
+                 from /opt/ros/humble/include/g2o/core/sparse_optimizer.h:34,
+                 from /home/pavaris/mobile_project/src/teb_cpp_pkg/src/teb_planner_node.cpp:13:
+/opt/ros/humble/include/g2o/core/sparse_block_matrix.hpp: In member function ‘g2o::SparseBlockMatrix<MatrixType>* g2o::SparseBlockMatrix<MatrixType>::slice(int, int, int, int, bool) const’:
+/opt/ros/humble/include/g2o/core/sparse_block_matrix.hpp:367:7: warning: ISO C++ forbids variable length array ‘rowIdx’ [-Wvla]
+  367 |   int rowIdx[m];
+      |       ^~~~~~
+/opt/ros/humble/include/g2o/core/sparse_block_matrix.hpp:373:7: warning: ISO C++ forbids variable length array ‘colIdx’ [-Wvla]
+  373 |   int colIdx[n];
+      |       ^~~~~~
+In file included from /home/pavaris/mobile_project/src/teb_cpp_pkg/src/teb_planner_node.cpp:16:
+/opt/ros/humble/include/g2o/solvers/eigen/linear_solver_eigen.h: At global scope:
+/opt/ros/humble/include/g2o/solvers/eigen/linear_solver_eigen.h:84:34: warning: extra ‘;’ [-Wpedantic]
+   84 |   EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
+      |                                  ^
+      |                                  -
+In file included from /opt/ros/humble/include/g2o/core/base_binary_edge.h:30,
+                 from /home/pavaris/mobile_project/src/teb_cpp_pkg/src/teb_planner_node.cpp:18:
+/opt/ros/humble/include/g2o/core/base_fixed_sized_edge.h:140:4: warning: extra ‘;’ [-Wpedantic]
+  140 |   };
+      |    ^
+      |    -
+/opt/ros/humble/include/g2o/core/base_fixed_sized_edge.h:150:4: warning: extra ‘;’ [-Wpedantic]
+  150 |   };
+      |    ^
+      |    -
+/opt/ros/humble/include/g2o/core/base_fixed_sized_edge.h:154:4: warning: extra ‘;’ [-Wpedantic]
+  154 |   };
+      |    ^
+      |    -
+In file included from /usr/include/eigen3/Eigen/Core:164,
+                 from /opt/ros/humble/include/g2o/core/io_helper.h:30,
+                 from /opt/ros/humble/include/g2o/core/optimizable_graph.h:38,
+                 from /opt/ros/humble/include/g2o/core/sparse_optimizer.h:33,
+                 from /home/pavaris/mobile_project/src/teb_cpp_pkg/src/teb_planner_node.cpp:13:
+/usr/include/eigen3/Eigen/src/Core/../plugins/BlockMethods.h: In instantiation of ‘typename Eigen::DenseBase<Derived>::FixedSegmentReturnType<Eigen::internal::get_fixed_value<NRowsType>::value>::Type Eigen::DenseBase<Derived>::tail(NType) [with NType = long int; Derived = Eigen::Block<Eigen::Ref<Eigen::Matrix<double, 0, 0, 0, 0, 0>, 0, Eigen::OuterStride<> >, 0, 1, true>; typename Eigen::DenseBase<Derived>::FixedSegmentReturnType<Eigen::internal::get_fixed_value<NRowsType>::value>::Type = Eigen::VectorBlock<Eigen::Block<Eigen::Ref<Eigen::Matrix<double, 0, 0, 0, 0, 0>, 0, Eigen::OuterStride<> >, 0, 1, true>, -1>]’:
+/usr/include/eigen3/Eigen/src/LU/PartialPivLU.h:377:25:   required from ‘static Eigen::Index Eigen::internal::partial_lu_impl<Scalar, StorageOrder, PivIndex, SizeAtCompileTime>::unblocked_lu(Eigen::internal::partial_lu_impl<Scalar, StorageOrder, PivIndex, SizeAtCompileTime>::MatrixTypeRef&, PivIndex*, PivIndex&) [with Scalar = double; int StorageOrder = 0; PivIndex = int; int SizeAtCompileTime = 0; Eigen::Index = long int; Eigen::internal::partial_lu_impl<Scalar, StorageOrder, PivIndex, SizeAtCompileTime>::MatrixTypeRef = Eigen::Ref<Eigen::Matrix<double, 0, 0, 0, 0, 0>, 0, Eigen::OuterStride<> >]’
+/usr/include/eigen3/Eigen/src/LU/PartialPivLU.h:439:26:   required from ‘static Eigen::Index Eigen::internal::partial_lu_impl<Scalar, StorageOrder, PivIndex, SizeAtCompileTime>::blocked_lu(Eigen::Index, Eigen::Index, Scalar*, Eigen::Index, PivIndex*, PivIndex&, Eigen::Index) [with Scalar = double; int StorageOrder = 0; PivIndex = int; int SizeAtCompileTime = 0; Eigen::Index = long int]’
+/usr/include/eigen3/Eigen/src/LU/PartialPivLU.h:519:17:   required from ‘void Eigen::internal::partial_lu_inplace(MatrixType&, TranspositionType&, typename TranspositionType::StorageIndex&) [with MatrixType = Eigen::Matrix<double, 0, 0, 0, 0, 0>; TranspositionType = Eigen::Transpositions<0, 0, int>; typename TranspositionType::StorageIndex = int]’
+/usr/include/eigen3/Eigen/src/LU/PartialPivLU.h:543:31:   required from ‘void Eigen::PartialPivLU<MatrixType>::compute() [with _MatrixType = Eigen::Matrix<double, 0, 0, 0, 0, 0>]’
+/usr/include/eigen3/Eigen/src/LU/PartialPivLU.h:133:14:   required from ‘Eigen::PartialPivLU<MatrixType>& Eigen::PartialPivLU<MatrixType>::compute(const Eigen::EigenBase<OtherDerived>&) [with InputType = Eigen::Matrix<double, 0, 0, 0, 0, 0>; _MatrixType = Eigen::Matrix<double, 0, 0, 0, 0, 0>]’
+/usr/include/eigen3/Eigen/src/LU/PartialPivLU.h:315:10:   [ skipping 5 instantiation contexts, use -ftemplate-backtrace-limit=0 to disable ]
+/usr/include/eigen3/Eigen/src/Core/AssignEvaluator.h:858:27:   required from ‘void Eigen::internal::call_assignment(Dst&, const Src&, const Func&, typename Eigen::internal::enable_if<(! Eigen::internal::evaluator_assume_aliasing<Src>::value), void*>::type) [with Dst = Eigen::Matrix<double, 0, 0, 0, 0, 0>; Src = Eigen::Inverse<Eigen::Matrix<double, 0, 0, 0, 0, 0> >; Func = Eigen::internal::assign_op<double, double>; typename Eigen::internal::enable_if<(! Eigen::internal::evaluator_assume_aliasing<Src>::value), void*>::type = void*; typename Eigen::internal::evaluator_traits<SrcXprType>::Shape = Eigen::DenseShape]’
+/usr/include/eigen3/Eigen/src/Core/AssignEvaluator.h:836:18:   required from ‘void Eigen::internal::call_assignment(Dst&, const Src&) [with Dst = Eigen::Matrix<double, 0, 0, 0, 0, 0>; Src = Eigen::Inverse<Eigen::Matrix<double, 0, 0, 0, 0, 0> >]’
+/usr/include/eigen3/Eigen/src/Core/PlainObjectBase.h:779:32:   required from ‘Derived& Eigen::PlainObjectBase<Derived>::_set(const Eigen::DenseBase<OtherDerived>&) [with OtherDerived = Eigen::Inverse<Eigen::Matrix<double, 0, 0, 0, 0, 0> >; Derived = Eigen::Matrix<double, 0, 0, 0, 0, 0>]’
+/usr/include/eigen3/Eigen/src/Core/Matrix.h:225:24:   required from ‘Eigen::Matrix<_Scalar, _Rows, _Cols, _Options, _MaxRows, _MaxCols>& Eigen::Matrix<_Scalar, _Rows, _Cols, _Options, _MaxRows, _MaxCols>::operator=(const Eigen::DenseBase<OtherDerived>&) [with OtherDerived = Eigen::Inverse<Eigen::Matrix<double, 0, 0, 0, 0, 0> >; _Scalar = double; int _Rows = 0; int _Cols = 0; int _Options = 0; int _MaxRows = 0; int _MaxCols = 0]’
+/opt/ros/humble/include/g2o/core/block_solver.hpp:369:10:   required from ‘bool g2o::BlockSolver<Traits>::solve() [with Traits = g2o::BlockSolverTraits<3, 0>]’
+/opt/ros/humble/include/g2o/core/block_solver.hpp:329:6:   required from here
+/usr/include/eigen3/Eigen/src/Core/util/StaticAssert.h:143:29: error: static assertion failed: YOU_TRIED_CALLING_A_VECTOR_METHOD_ON_A_MATRIX
+  143 |   EIGEN_STATIC_ASSERT(TYPE::IsVectorAtCompileTime, \
+      |                             ^~~~~~~~~~~~~~~~~~~~~
+/usr/include/eigen3/Eigen/src/Core/util/StaticAssert.h:33:54: note: in definition of macro ‘EIGEN_STATIC_ASSERT’
+   33 |     #define EIGEN_STATIC_ASSERT(X,MSG) static_assert(X,#MSG);
+      |                                                      ^
+/usr/include/eigen3/Eigen/src/Core/../plugins/BlockMethods.h:1259:3: note: in expansion of macro ‘EIGEN_STATIC_ASSERT_VECTOR_ONLY’
+ 1259 |   EIGEN_STATIC_ASSERT_VECTOR_ONLY(Derived)
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/usr/include/eigen3/Eigen/src/Core/util/StaticAssert.h:143:29: note: ‘Eigen::Block<Eigen::Ref<Eigen::Matrix<double, 0, 0, 0, 0, 0>, 0, Eigen::OuterStride<> >, 0, 1, true>::IsVectorAtCompileTime’ evaluates to false
+  143 |   EIGEN_STATIC_ASSERT(TYPE::IsVectorAtCompileTime, \
+      |                             ^~~~~~~~~~~~~~~~~~~~~
+/usr/include/eigen3/Eigen/src/Core/util/StaticAssert.h:33:54: note: in definition of macro ‘EIGEN_STATIC_ASSERT’
+   33 |     #define EIGEN_STATIC_ASSERT(X,MSG) static_assert(X,#MSG);
+      |                                                      ^
+/usr/include/eigen3/Eigen/src/Core/../plugins/BlockMethods.h:1259:3: note: in expansion of macro ‘EIGEN_STATIC_ASSERT_VECTOR_ONLY’
+ 1259 |   EIGEN_STATIC_ASSERT_VECTOR_ONLY(Derived)
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/usr/include/eigen3/Eigen/src/Core/../plugins/BlockMethods.h: In instantiation of ‘typename Eigen::DenseBase<Derived>::FixedSegmentReturnType<Eigen::internal::get_fixed_value<NRowsType>::value>::Type Eigen::DenseBase<Derived>::tail(NType) [with NType = Eigen::internal::VariableAndFixedInt<-1>; Derived = Eigen::Block<Eigen::Ref<Eigen::Matrix<double, 0, 0, 0, 0, 0>, 0, Eigen::OuterStride<> >, 0, 1, true>; typename Eigen::DenseBase<Derived>::FixedSegmentReturnType<Eigen::internal::get_fixed_value<NRowsType>::value>::Type = Eigen::VectorBlock<Eigen::Block<Eigen::Ref<Eigen::Matrix<double, 0, 0, 0, 0, 0>, 0, Eigen::OuterStride<> >, 0, 1, true>, -1>]’:
+/usr/include/eigen3/Eigen/src/LU/PartialPivLU.h:390:23:   required from ‘static Eigen::Index Eigen::internal::partial_lu_impl<Scalar, StorageOrder, PivIndex, SizeAtCompileTime>::unblocked_lu(Eigen::internal::partial_lu_impl<Scalar, StorageOrder, PivIndex, SizeAtCompileTime>::MatrixTypeRef&, PivIndex*, PivIndex&) [with Scalar = double; int StorageOrder = 0; PivIndex = int; int SizeAtCompileTime = 0; Eigen::Index = long int; Eigen::internal::partial_lu_impl<Scalar, StorageOrder, PivIndex, SizeAtCompileTime>::MatrixTypeRef = Eigen::Ref<Eigen::Matrix<double, 0, 0, 0, 0, 0>, 0, Eigen::OuterStride<> >]’
+/usr/include/eigen3/Eigen/src/LU/PartialPivLU.h:439:26:   required from ‘static Eigen::Index Eigen::internal::partial_lu_impl<Scalar, StorageOrder, PivIndex, SizeAtCompileTime>::blocked_lu(Eigen::Index, Eigen::Index, Scalar*, Eigen::Index, PivIndex*, PivIndex&, Eigen::Index) [with Scalar = double; int StorageOrder = 0; PivIndex = int; int SizeAtCompileTime = 0; Eigen::Index = long int]’
+/usr/include/eigen3/Eigen/src/LU/PartialPivLU.h:519:17:   required from ‘void Eigen::internal::partial_lu_inplace(MatrixType&, TranspositionType&, typename TranspositionType::StorageIndex&) [with MatrixType = Eigen::Matrix<double, 0, 0, 0, 0, 0>; TranspositionType = Eigen::Transpositions<0, 0, int>; typename TranspositionType::StorageIndex = int]’
+/usr/include/eigen3/Eigen/src/LU/PartialPivLU.h:543:31:   required from ‘void Eigen::PartialPivLU<MatrixType>::compute() [with _MatrixType = Eigen::Matrix<double, 0, 0, 0, 0, 0>]’
+/usr/include/eigen3/Eigen/src/LU/PartialPivLU.h:133:14:   required from ‘Eigen::PartialPivLU<MatrixType>& Eigen::PartialPivLU<MatrixType>::compute(const Eigen::EigenBase<OtherDerived>&) [with InputType = Eigen::Matrix<double, 0, 0, 0, 0, 0>; _MatrixType = Eigen::Matrix<double, 0, 0, 0, 0, 0>]’
+/usr/include/eigen3/Eigen/src/LU/PartialPivLU.h:315:10:   [ skipping 5 instantiation contexts, use -ftemplate-backtrace-limit=0 to disable ]
+/usr/include/eigen3/Eigen/src/Core/AssignEvaluator.h:858:27:   required from ‘void Eigen::internal::call_assignment(Dst&, const Src&, const Func&, typename Eigen::internal::enable_if<(! Eigen::internal::evaluator_assume_aliasing<Src>::value), void*>::type) [with Dst = Eigen::Matrix<double, 0, 0, 0, 0, 0>; Src = Eigen::Inverse<Eigen::Matrix<double, 0, 0, 0, 0, 0> >; Func = Eigen::internal::assign_op<double, double>; typename Eigen::internal::enable_if<(! Eigen::internal::evaluator_assume_aliasing<Src>::value), void*>::type = void*; typename Eigen::internal::evaluator_traits<SrcXprType>::Shape = Eigen::DenseShape]’
+/usr/include/eigen3/Eigen/src/Core/AssignEvaluator.h:836:18:   required from ‘void Eigen::internal::call_assignment(Dst&, const Src&) [with Dst = Eigen::Matrix<double, 0, 0, 0, 0, 0>; Src = Eigen::Inverse<Eigen::Matrix<double, 0, 0, 0, 0, 0> >]’
+/usr/include/eigen3/Eigen/src/Core/PlainObjectBase.h:779:32:   required from ‘Derived& Eigen::PlainObjectBase<Derived>::_set(const Eigen::DenseBase<OtherDerived>&) [with OtherDerived = Eigen::Inverse<Eigen::Matrix<double, 0, 0, 0, 0, 0> >; Derived = Eigen::Matrix<double, 0, 0, 0, 0, 0>]’
+/usr/include/eigen3/Eigen/src/Core/Matrix.h:225:24:   required from ‘Eigen::Matrix<_Scalar, _Rows, _Cols, _Options, _MaxRows, _MaxCols>& Eigen::Matrix<_Scalar, _Rows, _Cols, _Options, _MaxRows, _MaxCols>::operator=(const Eigen::DenseBase<OtherDerived>&) [with OtherDerived = Eigen::Inverse<Eigen::Matrix<double, 0, 0, 0, 0, 0> >; _Scalar = double; int _Rows = 0; int _Cols = 0; int _Options = 0; int _MaxRows = 0; int _MaxCols = 0]’
+/opt/ros/humble/include/g2o/core/block_solver.hpp:369:10:   required from ‘bool g2o::BlockSolver<Traits>::solve() [with Traits = g2o::BlockSolverTraits<3, 0>]’
+/opt/ros/humble/include/g2o/core/block_solver.hpp:329:6:   required from here
+/usr/include/eigen3/Eigen/src/Core/util/StaticAssert.h:143:29: error: static assertion failed: YOU_TRIED_CALLING_A_VECTOR_METHOD_ON_A_MATRIX
+  143 |   EIGEN_STATIC_ASSERT(TYPE::IsVectorAtCompileTime, \
+      |                             ^~~~~~~~~~~~~~~~~~~~~
+/usr/include/eigen3/Eigen/src/Core/util/StaticAssert.h:33:54: note: in definition of macro ‘EIGEN_STATIC_ASSERT’
+   33 |     #define EIGEN_STATIC_ASSERT(X,MSG) static_assert(X,#MSG);
+      |                                                      ^
+/usr/include/eigen3/Eigen/src/Core/../plugins/BlockMethods.h:1259:3: note: in expansion of macro ‘EIGEN_STATIC_ASSERT_VECTOR_ONLY’
+ 1259 |   EIGEN_STATIC_ASSERT_VECTOR_ONLY(Derived)
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/usr/include/eigen3/Eigen/src/Core/util/StaticAssert.h:143:29: note: ‘Eigen::Block<Eigen::Ref<Eigen::Matrix<double, 0, 0, 0, 0, 0>, 0, Eigen::OuterStride<> >, 0, 1, true>::IsVectorAtCompileTime’ evaluates to false
+  143 |   EIGEN_STATIC_ASSERT(TYPE::IsVectorAtCompileTime, \
+      |                             ^~~~~~~~~~~~~~~~~~~~~
+/usr/include/eigen3/Eigen/src/Core/util/StaticAssert.h:33:54: note: in definition of macro ‘EIGEN_STATIC_ASSERT’
+   33 |     #define EIGEN_STATIC_ASSERT(X,MSG) static_assert(X,#MSG);
+      |                                                      ^
+/usr/include/eigen3/Eigen/src/Core/../plugins/BlockMethods.h:1259:3: note: in expansion of macro ‘EIGEN_STATIC_ASSERT_VECTOR_ONLY’
+ 1259 |   EIGEN_STATIC_ASSERT_VECTOR_ONLY(Derived)
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/usr/include/eigen3/Eigen/src/Core/../plugins/BlockMethods.h: In instantiation of ‘typename Eigen::DenseBase<Derived>::FixedSegmentReturnType<Eigen::internal::get_fixed_value<NRowsType>::value>::Type Eigen::DenseBase<Derived>::tail(NType) [with NType = Eigen::internal::VariableAndFixedInt<-1>; Derived = Eigen::Block<Eigen::Ref<Eigen::Matrix<double, 0, 0, 0, 0, 0>, 0, Eigen::OuterStride<> >, 1, 0, false>; typename Eigen::DenseBase<Derived>::FixedSegmentReturnType<Eigen::internal::get_fixed_value<NRowsType>::value>::Type = Eigen::VectorBlock<Eigen::Block<Eigen::Ref<Eigen::Matrix<double, 0, 0, 0, 0, 0>, 0, Eigen::OuterStride<> >, 1, 0, false>, -1>]’:
+/usr/include/eigen3/Eigen/src/LU/PartialPivLU.h:400:130:   required from ‘static Eigen::Index Eigen::internal::partial_lu_impl<Scalar, StorageOrder, PivIndex, SizeAtCompileTime>::unblocked_lu(Eigen::internal::partial_lu_impl<Scalar, StorageOrder, PivIndex, SizeAtCompileTime>::MatrixTypeRef&, PivIndex*, PivIndex&) [with Scalar = double; int StorageOrder = 0; PivIndex = int; int SizeAtCompileTime = 0; Eigen::Index = long int; Eigen::internal::partial_lu_impl<Scalar, StorageOrder, PivIndex, SizeAtCompileTime>::MatrixTypeRef = Eigen::Ref<Eigen::Matrix<double, 0, 0, 0, 0, 0>, 0, Eigen::OuterStride<> >]’
+/usr/include/eigen3/Eigen/src/LU/PartialPivLU.h:439:26:   required from ‘static Eigen::Index Eigen::internal::partial_lu_impl<Scalar, StorageOrder, PivIndex, SizeAtCompileTime>::blocked_lu(Eigen::Index, Eigen::Index, Scalar*, Eigen::Index, PivIndex*, PivIndex&, Eigen::Index) [with Scalar = double; int StorageOrder = 0; PivIndex = int; int SizeAtCompileTime = 0; Eigen::Index = long int]’
+/usr/include/eigen3/Eigen/src/LU/PartialPivLU.h:519:17:   required from ‘void Eigen::internal::partial_lu_inplace(MatrixType&, TranspositionType&, typename TranspositionType::StorageIndex&) [with MatrixType = Eigen::Matrix<double, 0, 0, 0, 0, 0>; TranspositionType = Eigen::Transpositions<0, 0, int>; typename TranspositionType::StorageIndex = int]’
+/usr/include/eigen3/Eigen/src/LU/PartialPivLU.h:543:31:   required from ‘void Eigen::PartialPivLU<MatrixType>::compute() [with _MatrixType = Eigen::Matrix<double, 0, 0, 0, 0, 0>]’
+/usr/include/eigen3/Eigen/src/LU/PartialPivLU.h:133:14:   required from ‘Eigen::PartialPivLU<MatrixType>& Eigen::PartialPivLU<MatrixType>::compute(const Eigen::EigenBase<OtherDerived>&) [with InputType = Eigen::Matrix<double, 0, 0, 0, 0, 0>; _MatrixType = Eigen::Matrix<double, 0, 0, 0, 0, 0>]’
+/usr/include/eigen3/Eigen/src/LU/PartialPivLU.h:315:10:   [ skipping 5 instantiation contexts, use -ftemplate-backtrace-limit=0 to disable ]
+/usr/include/eigen3/Eigen/src/Core/AssignEvaluator.h:858:27:   required from ‘void Eigen::internal::call_assignment(Dst&, const Src&, const Func&, typename Eigen::internal::enable_if<(! Eigen::internal::evaluator_assume_aliasing<Src>::value), void*>::type) [with Dst = Eigen::Matrix<double, 0, 0, 0, 0, 0>; Src = Eigen::Inverse<Eigen::Matrix<double, 0, 0, 0, 0, 0> >; Func = Eigen::internal::assign_op<double, double>; typename Eigen::internal::enable_if<(! Eigen::internal::evaluator_assume_aliasing<Src>::value), void*>::type = void*; typename Eigen::internal::evaluator_traits<SrcXprType>::Shape = Eigen::DenseShape]’
+/usr/include/eigen3/Eigen/src/Core/AssignEvaluator.h:836:18:   required from ‘void Eigen::internal::call_assignment(Dst&, const Src&) [with Dst = Eigen::Matrix<double, 0, 0, 0, 0, 0>; Src = Eigen::Inverse<Eigen::Matrix<double, 0, 0, 0, 0, 0> >]’
+/usr/include/eigen3/Eigen/src/Core/PlainObjectBase.h:779:32:   required from ‘Derived& Eigen::PlainObjectBase<Derived>::_set(const Eigen::DenseBase<OtherDerived>&) [with OtherDerived = Eigen::Inverse<Eigen::Matrix<double, 0, 0, 0, 0, 0> >; Derived = Eigen::Matrix<double, 0, 0, 0, 0, 0>]’
+/usr/include/eigen3/Eigen/src/Core/Matrix.h:225:24:   required from ‘Eigen::Matrix<_Scalar, _Rows, _Cols, _Options, _MaxRows, _MaxCols>& Eigen::Matrix<_Scalar, _Rows, _Cols, _Options, _MaxRows, _MaxCols>::operator=(const Eigen::DenseBase<OtherDerived>&) [with OtherDerived = Eigen::Inverse<Eigen::Matrix<double, 0, 0, 0, 0, 0> >; _Scalar = double; int _Rows = 0; int _Cols = 0; int _Options = 0; int _MaxRows = 0; int _MaxCols = 0]’
+/opt/ros/humble/include/g2o/core/block_solver.hpp:369:10:   required from ‘bool g2o::BlockSolver<Traits>::solve() [with Traits = g2o::BlockSolverTraits<3, 0>]’
+/opt/ros/humble/include/g2o/core/block_solver.hpp:329:6:   required from here
+/usr/include/eigen3/Eigen/src/Core/util/StaticAssert.h:143:29: error: static assertion failed: YOU_TRIED_CALLING_A_VECTOR_METHOD_ON_A_MATRIX
+  143 |   EIGEN_STATIC_ASSERT(TYPE::IsVectorAtCompileTime, \
+      |                             ^~~~~~~~~~~~~~~~~~~~~
+/usr/include/eigen3/Eigen/src/Core/util/StaticAssert.h:33:54: note: in definition of macro ‘EIGEN_STATIC_ASSERT’
+   33 |     #define EIGEN_STATIC_ASSERT(X,MSG) static_assert(X,#MSG);
+      |                                                      ^
+/usr/include/eigen3/Eigen/src/Core/../plugins/BlockMethods.h:1259:3: note: in expansion of macro ‘EIGEN_STATIC_ASSERT_VECTOR_ONLY’
+ 1259 |   EIGEN_STATIC_ASSERT_VECTOR_ONLY(Derived)
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/usr/include/eigen3/Eigen/src/Core/util/StaticAssert.h:143:29: note: ‘Eigen::Block<Eigen::Ref<Eigen::Matrix<double, 0, 0, 0, 0, 0>, 0, Eigen::OuterStride<> >, 1, 0, false>::IsVectorAtCompileTime’ evaluates to false
+  143 |   EIGEN_STATIC_ASSERT(TYPE::IsVectorAtCompileTime, \
+      |                             ^~~~~~~~~~~~~~~~~~~~~
+/usr/include/eigen3/Eigen/src/Core/util/StaticAssert.h:33:54: note: in definition of macro ‘EIGEN_STATIC_ASSERT’
+   33 |     #define EIGEN_STATIC_ASSERT(X,MSG) static_assert(X,#MSG);
+      |                                                      ^
+/usr/include/eigen3/Eigen/src/Core/../plugins/BlockMethods.h:1259:3: note: in expansion of macro ‘EIGEN_STATIC_ASSERT_VECTOR_ONLY’
+ 1259 |   EIGEN_STATIC_ASSERT_VECTOR_ONLY(Derived)
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/usr/include/eigen3/Eigen/src/Core/Visitor.h: In instantiation of ‘typename Eigen::internal::traits<T>::Scalar Eigen::DenseBase<Derived>::maxCoeff(IndexType*) const [with int NaNPropagation = 0; IndexType = long int; Derived = Eigen::CwiseUnaryOp<Eigen::internal::scalar_score_coeff_op<double>, const Eigen::Block<Eigen::Block<Eigen::Ref<Eigen::Matrix<double, 0, 0, 0, 0, 0>, 0, Eigen::OuterStride<> >, 0, 1, true>, -1, 1, false> >; typename Eigen::internal::traits<T>::Scalar = double]’:
+/usr/include/eigen3/Eigen/src/Core/DenseBase.h:501:37:   required from ‘typename Eigen::internal::traits<T>::Scalar Eigen::DenseBase<Derived>::maxCoeff(IndexType*) const [with IndexType = long int; Derived = Eigen::CwiseUnaryOp<Eigen::internal::scalar_score_coeff_op<double>, const Eigen::Block<Eigen::Block<Eigen::Ref<Eigen::Matrix<double, 0, 0, 0, 0, 0>, 0, Eigen::OuterStride<> >, 0, 1, true>, -1, 1, false> >; typename Eigen::internal::traits<T>::Scalar = double]’
+/usr/include/eigen3/Eigen/src/LU/PartialPivLU.h:377:63:   required from ‘static Eigen::Index Eigen::internal::partial_lu_impl<Scalar, StorageOrder, PivIndex, SizeAtCompileTime>::unblocked_lu(Eigen::internal::partial_lu_impl<Scalar, StorageOrder, PivIndex, SizeAtCompileTime>::MatrixTypeRef&, PivIndex*, PivIndex&) [with Scalar = double; int StorageOrder = 0; PivIndex = int; int SizeAtCompileTime = 0; Eigen::Index = long int; Eigen::internal::partial_lu_impl<Scalar, StorageOrder, PivIndex, SizeAtCompileTime>::MatrixTypeRef = Eigen::Ref<Eigen::Matrix<double, 0, 0, 0, 0, 0>, 0, Eigen::OuterStride<> >]’
+/usr/include/eigen3/Eigen/src/LU/PartialPivLU.h:439:26:   required from ‘static Eigen::Index Eigen::internal::partial_lu_impl<Scalar, StorageOrder, PivIndex, SizeAtCompileTime>::blocked_lu(Eigen::Index, Eigen::Index, Scalar*, Eigen::Index, PivIndex*, PivIndex&, Eigen::Index) [with Scalar = double; int StorageOrder = 0; PivIndex = int; int SizeAtCompileTime = 0; Eigen::Index = long int]’
+/usr/include/eigen3/Eigen/src/LU/PartialPivLU.h:519:17:   required from ‘void Eigen::internal::partial_lu_inplace(MatrixType&, TranspositionType&, typename TranspositionType::StorageIndex&) [with MatrixType = Eigen::Matrix<double, 0, 0, 0, 0, 0>; TranspositionType = Eigen::Transpositions<0, 0, int>; typename TranspositionType::StorageIndex = int]’
+/usr/include/eigen3/Eigen/src/LU/PartialPivLU.h:543:31:   required from ‘void Eigen::PartialPivLU<MatrixType>::compute() [with _MatrixType = Eigen::Matrix<double, 0, 0, 0, 0, 0>]’
+/usr/include/eigen3/Eigen/src/LU/PartialPivLU.h:133:14:   [ skipping 6 instantiation contexts, use -ftemplate-backtrace-limit=0 to disable ]
+/usr/include/eigen3/Eigen/src/Core/AssignEvaluator.h:858:27:   required from ‘void Eigen::internal::call_assignment(Dst&, const Src&, const Func&, typename Eigen::internal::enable_if<(! Eigen::internal::evaluator_assume_aliasing<Src>::value), void*>::type) [with Dst = Eigen::Matrix<double, 0, 0, 0, 0, 0>; Src = Eigen::Inverse<Eigen::Matrix<double, 0, 0, 0, 0, 0> >; Func = Eigen::internal::assign_op<double, double>; typename Eigen::internal::enable_if<(! Eigen::internal::evaluator_assume_aliasing<Src>::value), void*>::type = void*; typename Eigen::internal::evaluator_traits<SrcXprType>::Shape = Eigen::DenseShape]’
+/usr/include/eigen3/Eigen/src/Core/AssignEvaluator.h:836:18:   required from ‘void Eigen::internal::call_assignment(Dst&, const Src&) [with Dst = Eigen::Matrix<double, 0, 0, 0, 0, 0>; Src = Eigen::Inverse<Eigen::Matrix<double, 0, 0, 0, 0, 0> >]’
+/usr/include/eigen3/Eigen/src/Core/PlainObjectBase.h:779:32:   required from ‘Derived& Eigen::PlainObjectBase<Derived>::_set(const Eigen::DenseBase<OtherDerived>&) [with OtherDerived = Eigen::Inverse<Eigen::Matrix<double, 0, 0, 0, 0, 0> >; Derived = Eigen::Matrix<double, 0, 0, 0, 0, 0>]’
+/usr/include/eigen3/Eigen/src/Core/Matrix.h:225:24:   required from ‘Eigen::Matrix<_Scalar, _Rows, _Cols, _Options, _MaxRows, _MaxCols>& Eigen::Matrix<_Scalar, _Rows, _Cols, _Options, _MaxRows, _MaxCols>::operator=(const Eigen::DenseBase<OtherDerived>&) [with OtherDerived = Eigen::Inverse<Eigen::Matrix<double, 0, 0, 0, 0, 0> >; _Scalar = double; int _Rows = 0; int _Cols = 0; int _Options = 0; int _MaxRows = 0; int _MaxCols = 0]’
+/opt/ros/humble/include/g2o/core/block_solver.hpp:369:10:   required from ‘bool g2o::BlockSolver<Traits>::solve() [with Traits = g2o::BlockSolverTraits<3, 0>]’
+/opt/ros/humble/include/g2o/core/block_solver.hpp:329:6:   required from here
+/usr/include/eigen3/Eigen/src/Core/util/StaticAssert.h:143:29: error: static assertion failed: YOU_TRIED_CALLING_A_VECTOR_METHOD_ON_A_MATRIX
+  143 |   EIGEN_STATIC_ASSERT(TYPE::IsVectorAtCompileTime, \
+      |                             ^~~~~~~~~~~~~~~~~~~~~
+/usr/include/eigen3/Eigen/src/Core/util/StaticAssert.h:33:54: note: in definition of macro ‘EIGEN_STATIC_ASSERT’
+   33 |     #define EIGEN_STATIC_ASSERT(X,MSG) static_assert(X,#MSG);
+      |                                                      ^
+/usr/include/eigen3/Eigen/src/Core/Visitor.h:372:3: note: in expansion of macro ‘EIGEN_STATIC_ASSERT_VECTOR_ONLY’
+  372 |   EIGEN_STATIC_ASSERT_VECTOR_ONLY(Derived)
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/usr/include/eigen3/Eigen/src/Core/util/StaticAssert.h:143:29: note: ‘Eigen::CwiseUnaryOp<Eigen::internal::scalar_score_coeff_op<double>, const Eigen::Block<Eigen::Block<Eigen::Ref<Eigen::Matrix<double, 0, 0, 0, 0, 0>, 0, Eigen::OuterStride<> >, 0, 1, true>, -1, 1, false> >::IsVectorAtCompileTime’ evaluates to false
+  143 |   EIGEN_STATIC_ASSERT(TYPE::IsVectorAtCompileTime, \
+      |                             ^~~~~~~~~~~~~~~~~~~~~
+/usr/include/eigen3/Eigen/src/Core/util/StaticAssert.h:33:54: note: in definition of macro ‘EIGEN_STATIC_ASSERT’
+   33 |     #define EIGEN_STATIC_ASSERT(X,MSG) static_assert(X,#MSG);
+      |                                                      ^
+/usr/include/eigen3/Eigen/src/Core/Visitor.h:372:3: note: in expansion of macro ‘EIGEN_STATIC_ASSERT_VECTOR_ONLY’
+  372 |   EIGEN_STATIC_ASSERT_VECTOR_ONLY(Derived)
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+In file included from /usr/include/eigen3/Eigen/Core:334,
+                 from /opt/ros/humble/include/g2o/core/io_helper.h:30,
+                 from /opt/ros/humble/include/g2o/core/optimizable_graph.h:38,
+                 from /opt/ros/humble/include/g2o/core/sparse_optimizer.h:33,
+                 from /home/pavaris/mobile_project/src/teb_cpp_pkg/src/teb_planner_node.cpp:13:
+/usr/include/eigen3/Eigen/src/Core/products/GeneralMatrixMatrix.h: In instantiation of ‘class Eigen::internal::gemm_blocking_space<0, double, double, 0, 0, 0, 4, true>’:
+/usr/include/eigen3/Eigen/src/Core/SolveTriangular.h:98:18:   required from ‘static void Eigen::internal::triangular_solver_selector<Lhs, Rhs, Side, Mode, 0, -1>::run(const Lhs&, Rhs&) [with Lhs = const Eigen::Matrix<double, 0, 0, 0, 0, 0>; Rhs = Eigen::Matrix<double, 0, 0, 0, 0, 0>; int Side = 1; int Mode = 5]’
+/usr/include/eigen3/Eigen/src/Core/SolveTriangular.h:182:21:   required from ‘void Eigen::TriangularViewImpl<_MatrixType, _Mode, Eigen::Dense>::solveInPlace(const Eigen::MatrixBase<OtherDerived>&) const [with int Side = 1; OtherDerived = Eigen::Matrix<double, 0, 0, 0, 0, 0>; _MatrixType = const Eigen::Matrix<double, 0, 0, 0, 0, 0>; unsigned int _Mode = 5]’
+/usr/include/eigen3/Eigen/src/Core/TriangularMatrix.h:522:37:   required from ‘void Eigen::TriangularViewImpl<_MatrixType, _Mode, Eigen::Dense>::solveInPlace(const Eigen::MatrixBase<OtherDerived>&) const [with OtherDerived = Eigen::Matrix<double, 0, 0, 0, 0, 0>; _MatrixType = const Eigen::Matrix<double, 0, 0, 0, 0, 0>; unsigned int _Mode = 5]’
+/usr/include/eigen3/Eigen/src/LU/PartialPivLU.h:237:61:   required from ‘void Eigen::PartialPivLU<MatrixType>::_solve_impl(const RhsType&, DstType&) const [with RhsType = Eigen::CwiseNullaryOp<Eigen::internal::scalar_identity_op<double>, Eigen::Matrix<double, 0, 0, 0, 0, 0> >; DstType = Eigen::Matrix<double, 0, 0, 0, 0, 0>; _MatrixType = Eigen::Matrix<double, 0, 0, 0, 0, 0>]’
+/usr/include/eigen3/Eigen/src/Core/Solve.h:147:26:   required from ‘static void Eigen::internal::Assignment<DstXprType, Eigen::Solve<DecType, RhsType>, Eigen::internal::assign_op<Scalar, Scalar>, Eigen::internal::Dense2Dense>::run(DstXprType&, const SrcXprType&, const Eigen::internal::assign_op<Scalar, Scalar>&) [with DstXprType = Eigen::Matrix<double, 0, 0, 0, 0, 0>; DecType = Eigen::PartialPivLU<Eigen::Matrix<double, 0, 0, 0, 0, 0> >; RhsType = Eigen::CwiseNullaryOp<Eigen::internal::scalar_identity_op<double>, Eigen::Matrix<double, 0, 0, 0, 0, 0> >; Scalar = double; Eigen::internal::Assignment<DstXprType, Eigen::Solve<DecType, RhsType>, Eigen::internal::assign_op<Scalar, Scalar>, Eigen::internal::Dense2Dense>::SrcXprType = Eigen::Solve<Eigen::PartialPivLU<Eigen::Matrix<double, 0, 0, 0, 0, 0> >, Eigen::CwiseNullaryOp<Eigen::internal::scalar_identity_op<double>, Eigen::Matrix<double, 0, 0, 0, 0, 0> > >]’
+/usr/include/eigen3/Eigen/src/Core/AssignEvaluator.h:890:49:   [ skipping 14 instantiation contexts, use -ftemplate-backtrace-limit=0 to disable ]
+/usr/include/eigen3/Eigen/src/Core/AssignEvaluator.h:858:27:   required from ‘void Eigen::internal::call_assignment(Dst&, const Src&, const Func&, typename Eigen::internal::enable_if<(! Eigen::internal::evaluator_assume_aliasing<Src>::value), void*>::type) [with Dst = Eigen::Matrix<double, 0, 0, 0, 0, 0>; Src = Eigen::Inverse<Eigen::Matrix<double, 0, 0, 0, 0, 0> >; Func = Eigen::internal::assign_op<double, double>; typename Eigen::internal::enable_if<(! Eigen::internal::evaluator_assume_aliasing<Src>::value), void*>::type = void*; typename Eigen::internal::evaluator_traits<SrcXprType>::Shape = Eigen::DenseShape]’
+/usr/include/eigen3/Eigen/src/Core/AssignEvaluator.h:836:18:   required from ‘void Eigen::internal::call_assignment(Dst&, const Src&) [with Dst = Eigen::Matrix<double, 0, 0, 0, 0, 0>; Src = Eigen::Inverse<Eigen::Matrix<double, 0, 0, 0, 0, 0> >]’
+/usr/include/eigen3/Eigen/src/Core/PlainObjectBase.h:779:32:   required from ‘Derived& Eigen::PlainObjectBase<Derived>::_set(const Eigen::DenseBase<OtherDerived>&) [with OtherDerived = Eigen::Inverse<Eigen::Matrix<double, 0, 0, 0, 0, 0> >; Derived = Eigen::Matrix<double, 0, 0, 0, 0, 0>]’
+/usr/include/eigen3/Eigen/src/Core/Matrix.h:225:24:   required from ‘Eigen::Matrix<_Scalar, _Rows, _Cols, _Options, _MaxRows, _MaxCols>& Eigen::Matrix<_Scalar, _Rows, _Cols, _Options, _MaxRows, _MaxCols>::operator=(const Eigen::DenseBase<OtherDerived>&) [with OtherDerived = Eigen::Inverse<Eigen::Matrix<double, 0, 0, 0, 0, 0> >; _Scalar = double; int _Rows = 0; int _Cols = 0; int _Options = 0; int _MaxRows = 0; int _MaxCols = 0]’
+/opt/ros/humble/include/g2o/core/block_solver.hpp:369:10:   required from ‘bool g2o::BlockSolver<Traits>::solve() [with Traits = g2o::BlockSolverTraits<3, 0>]’
+/opt/ros/humble/include/g2o/core/block_solver.hpp:329:6:   required from here
+/usr/include/eigen3/Eigen/src/Core/products/GeneralMatrixMatrix.h:298:41: warning: ISO C++ forbids zero-size array [-Wpedantic]
+  298 |     EIGEN_ALIGN_MAX LhsScalar m_staticA[SizeA];
+      |                                         ^~~~~
+/usr/include/eigen3/Eigen/src/Core/products/GeneralMatrixMatrix.h:299:41: warning: ISO C++ forbids zero-size array [-Wpedantic]
+  299 |     EIGEN_ALIGN_MAX RhsScalar m_staticB[SizeB];
+      |                                         ^~~~~
+/usr/include/eigen3/Eigen/src/Core/products/GeneralMatrixMatrix.h:298:31: warning: zero-size array member ‘Eigen::internal::gemm_blocking_space<0, double, double, 0, 0, 0, 4, true>::m_staticA’ not at end of ‘class Eigen::internal::gemm_blocking_space<0, double, double, 0, 0, 0, 4, true>’ [-Wpedantic]
+  298 |     EIGEN_ALIGN_MAX LhsScalar m_staticA[SizeA];
+      |                               ^~~~~~~~~
+/usr/include/eigen3/Eigen/src/Core/products/GeneralMatrixMatrix.h:279:7: note: in the definition of ‘class Eigen::internal::gemm_blocking_space<0, double, double, 0, 0, 0, 4, true>’
+  279 | class gemm_blocking_space<StorageOrder,_LhsScalar,_RhsScalar,MaxRows, MaxCols, MaxDepth, KcFactor, true /* == FiniteAtCompileTime */>
+      |       ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+gmake[2]: *** [CMakeFiles/teb_planner_lib.dir/build.make:76: CMakeFiles/teb_planner_lib.dir/src/teb_planner_node.cpp.o] Error 1
+gmake[1]: *** [CMakeFiles/Makefile2:165: CMakeFiles/teb_planner_lib.dir/all] Error 2
+gmake: *** [Makefile:146: all] Error 2
+---
+Failed   <<< teb_cpp_pkg [7.72s, exited with code 2]
+
+Summary: 0 packages finished [7.98s]
+  1 package failed: teb_cpp_pkg
+  1 package had stderr output: teb_cpp_pkg
