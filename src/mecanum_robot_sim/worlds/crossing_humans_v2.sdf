@@ -187,19 +187,33 @@
         <delay_start>1.0</delay_start>
         <auto_start>true</auto_start>
         <trajectory id="0" type="walk" >
-
-          <waypoint><time>0.0</time> <pose>-8  1.0 1.0 0 0  0.0</pose></waypoint>
-          <waypoint><time>13.3</time><pose> 8  1.0 1.0 0 0  0.0</pose></waypoint>
-
-          <waypoint><time>14.3</time><pose> 8  1.0 1.0 0 0  3.1416</pose></waypoint>
-
-          <waypoint><time>27.6</time><pose>-8  1.0 1.0 0 0  3.1416</pose></waypoint>
-
-          <waypoint><time>28.6</time><pose>-8  1.0 1.0 0 0  0.0</pose></waypoint>
+          <!-- Leg 1: walk east  (~1.2 m/s, waypoint every 2 s = 2.4 m) -->
+          <waypoint><time> 0.0</time><pose>-8.0  1.0 1.0 0 0  0.00</pose></waypoint>
+          <waypoint><time> 2.0</time><pose>-5.6  1.0 1.0 0 0  0.03</pose></waypoint>
+          <waypoint><time> 4.0</time><pose>-3.2  1.0 1.0 0 0 -0.02</pose></waypoint>
+          <waypoint><time> 6.0</time><pose>-0.8  1.0 1.0 0 0  0.04</pose></waypoint>
+          <waypoint><time> 8.0</time><pose> 1.6  1.0 1.0 0 0 -0.03</pose></waypoint>
+          <waypoint><time>10.0</time><pose> 4.0  1.0 1.0 0 0  0.02</pose></waypoint>
+          <waypoint><time>12.0</time><pose> 6.4  1.0 1.0 0 0  0.00</pose></waypoint>
+          <waypoint><time>13.3</time><pose> 8.0  1.0 1.0 0 0  0.0000</pose></waypoint>
+          <!-- Smooth turn east→west: 1.5 s through 90° midpoint -->
+          <waypoint><time>14.05</time><pose> 8.0  1.0 1.0 0 0  1.5708</pose></waypoint>
+          <waypoint><time>14.8</time> <pose> 8.0  1.0 1.0 0 0  3.1416</pose></waypoint>
+          <!-- Leg 2: walk west -->
+          <waypoint><time>16.8</time><pose> 5.6  1.0 1.0 0 0  3.1716</pose></waypoint>
+          <waypoint><time>18.8</time><pose> 3.2  1.0 1.0 0 0  3.1116</pose></waypoint>
+          <waypoint><time>20.8</time><pose> 0.8  1.0 1.0 0 0  3.1816</pose></waypoint>
+          <waypoint><time>22.8</time><pose>-1.6  1.0 1.0 0 0  3.1016</pose></waypoint>
+          <waypoint><time>24.8</time><pose>-4.0  1.0 1.0 0 0  3.1616</pose></waypoint>
+          <waypoint><time>26.8</time><pose>-6.4  1.0 1.0 0 0  3.1416</pose></waypoint>
+          <waypoint><time>28.1</time><pose>-8.0  1.0 1.0 0 0  3.1416</pose></waypoint>
+          <!-- Smooth turn west→east: 1.5 s through 90° midpoint (close loop) -->
+          <waypoint><time>28.85</time><pose>-8.0  1.0 1.0 0 0  1.5708</pose></waypoint>
+          <waypoint><time>29.6</time> <pose>-8.0  1.0 1.0 0 0  0.0</pose></waypoint>
         </trajectory>
       </script>
     </actor>
-    
+
     <!-- ═══════════════════════════════════════════════════
          HUMAN 2 – walks WEST  (right → left)
          Path: (8, -1.0) ──────────────→ (-8, -1.0)
@@ -221,37 +235,32 @@
         <delay_start>1.0</delay_start>
         <auto_start>true</auto_start>
         <trajectory id="0" type="walk" >
-
-          <waypoint><time>0.0</time> <pose> 8 -1.0 1.0 0 0  3.1416</pose></waypoint>
-          <waypoint><time>13.3</time><pose>-8 -1.0 1.0 0 0  3.1416</pose></waypoint>
-
-          <waypoint><time>14.3</time><pose>-8 -1.0 1.0 0 0  0.0</pose></waypoint>
-
-          <waypoint><time>27.6</time><pose> 8 -1.0 1.0 0 0  0.0</pose></waypoint>
-
-          <waypoint><time>28.6</time><pose> 8 -1.0 1.0 0 0  3.1416</pose></waypoint>
+          <!-- Leg 1: walk west  (~1.2 m/s, waypoint every 2 s = 2.4 m) -->
+          <waypoint><time> 0.0</time><pose> 8.0 -1.0 1.0 0 0  3.1416</pose></waypoint>
+          <waypoint><time> 2.0</time><pose> 5.6 -1.0 1.0 0 0  3.1116</pose></waypoint>
+          <waypoint><time> 4.0</time><pose> 3.2 -1.0 1.0 0 0  3.1716</pose></waypoint>
+          <waypoint><time> 6.0</time><pose> 0.8 -1.0 1.0 0 0  3.1416</pose></waypoint>
+          <waypoint><time> 8.0</time><pose>-1.6 -1.0 1.0 0 0  3.1116</pose></waypoint>
+          <waypoint><time>10.0</time><pose>-4.0 -1.0 1.0 0 0  3.1716</pose></waypoint>
+          <waypoint><time>12.0</time><pose>-6.4 -1.0 1.0 0 0  3.1416</pose></waypoint>
+          <waypoint><time>13.3</time><pose>-8.0 -1.0 1.0 0 0  3.1416</pose></waypoint>
+          <!-- Smooth turn west→east: 1.5 s through 90° midpoint -->
+          <waypoint><time>14.05</time><pose>-8.0 -1.0 1.0 0 0  1.5708</pose></waypoint>
+          <waypoint><time>14.8</time> <pose>-8.0 -1.0 1.0 0 0  0.0</pose></waypoint>
+          <!-- Leg 2: walk east -->
+          <waypoint><time>16.8</time><pose>-5.6 -1.0 1.0 0 0  0.02</pose></waypoint>
+          <waypoint><time>18.8</time><pose>-3.2 -1.0 1.0 0 0 -0.03</pose></waypoint>
+          <waypoint><time>20.8</time><pose>-0.8 -1.0 1.0 0 0  0.04</pose></waypoint>
+          <waypoint><time>22.8</time><pose> 1.6 -1.0 1.0 0 0 -0.02</pose></waypoint>
+          <waypoint><time>24.8</time><pose> 4.0 -1.0 1.0 0 0  0.03</pose></waypoint>
+          <waypoint><time>26.8</time><pose> 6.4 -1.0 1.0 0 0  0.00</pose></waypoint>
+          <waypoint><time>28.1</time><pose> 8.0 -1.0 1.0 0 0  0.00</pose></waypoint>
+          <!-- Smooth turn east→west: 1.5 s through 90° midpoint (close loop) -->
+          <waypoint><time>28.85</time><pose> 8.0 -1.0 1.0 0 0  1.5708</pose></waypoint>
+          <waypoint><time>29.6</time> <pose> 8.0 -1.0 1.0 0 0  3.1416</pose></waypoint>
         </trajectory>
       </script>
     </actor>
-
-    <!-- <actor name="human_2">
-      <skin>
-        <filename>/home/talae/.ignition/fuel/fuel.gazebosim.org/mingfei/models/actor/1/meshes/walk.dae</filename>
-        <scale>1.0</scale>
-      </skin>
-      <animation name="walk">
-        <filename>/home/talae/.ignition/fuel/fuel.gazebosim.org/mingfei/models/actor/1/meshes/walk.dae</filename>
-        <interpolate_x>true</interpolate_x>
-      </animation>
-      <script>
-        <loop>true</loop>
-        <delay_start>1.0</delay_start>
-        <auto_start>true</auto_start>
-        <trajectory id="0" type="walk" >
-          <waypoint><time>0.0</time> <pose>0 -1.0 1.0 0 0  0.0</pose></waypoint>
-        </trajectory>
-      </script>
-    </actor> -->
 
   </world>
 </sdf>

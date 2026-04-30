@@ -24,7 +24,7 @@ def generate_launch_description():
     ros_gz_sim = get_package_share_directory('ros_gz_sim')
 
     # ── Arguments ────────────────────────────────────────────────────────
-    world_arg   = DeclareLaunchArgument('world',   default_value='crossing_humans')
+    world_arg   = DeclareLaunchArgument('world',   default_value='crossing_humans_v2')
     spawn_x_arg = DeclareLaunchArgument('spawn_x', default_value='-7.0')
     spawn_y_arg = DeclareLaunchArgument('spawn_y', default_value=' 4.0')
     spawn_z_arg = DeclareLaunchArgument('spawn_z', default_value='0.0')

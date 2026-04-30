@@ -97,6 +97,8 @@ class HumanDetectionNode(Node):
         self.human_history = {} # เก็บ {id: {'pos': (x, y), 'time': timestamp}}
         self.min_front_scale = 1.2 # scale พื้นฐานเมื่อหยุดนิ่ง
         self.velocity_factor = 0.8  # ตัวคูณความเร็ว ยิ่งเยอะไข่ยิ่งยืด
+        self.alpha = 0.8
+        self.min_vel_threshold = 0.1
 
         # ---------------------------------------------------
 
@@ -176,32 +178,49 @@ class HumanDetectionNode(Node):
                 if dist_m > 0:
                     wx, wy = self._get_human_world_pose(u_center, v_center, dist_m)
                     
-                    # ─── คำนวณความเร็ว ───
-                    velocity = 0.0
-                    person_id = i # ในระบบจริงควรใช้ r.id[0] ถ้าใช้ model.track()
+                    # ─── คำนวณความเร็ว (เวอร์ชัน Smooth) ───
+                    instant_velocity = 0.0
+                    smooth_velocity = 0.0
+                    person_id = i 
                     
                     if person_id in self.human_history:
                         prev_data = self.human_history[person_id]
                         prev_pos = prev_data['pos']
                         prev_time = prev_data['time']
+                        prev_smooth_vel = prev_data.get('vel', 0.0) # ดึงค่าเฉลี่ยเดิมมา
                         
-                        # คำนวณระยะทางและเวลาที่ต่างกัน
+                        # 1. คำนวณความเร็วขณะหนึ่ง (Instantaneous Velocity)
                         dist_diff = math.sqrt((wx - prev_pos[0])**2 + (wy - prev_pos[1])**2)
                         time_diff = (now - prev_time).nanoseconds / 1e9
                         
-                        if time_diff > 0:
-                            velocity = dist_diff / time_diff
-                            # ป้องกันค่ากระโดด (Outlier rejection)
-                            velocity = min(velocity, 2.5) # คนไม่น่าเดินเร็วเกิน 2.5 m/s
+                        if 0.0 < time_diff < 1.0: # ป้องกันกรณี Frame drop นานเกินไป
+                            instant_velocity = dist_diff / time_diff
+                            
+                            # 2. กรองค่ากระโดดที่สูงผิดปกติ (Outlier Rejection)
+                            instant_velocity = min(instant_velocity, 2.0) 
 
-                    # อัปเดตประวัติ
-                    self.human_history[person_id] = {'pos': (wx, wy), 'time': now}
+                            # 3. ใช้ Low-pass Filter (EMA) เพื่อความสมูท
+                            # สูตร: V_new = (alpha * V_old) + ((1 - alpha) * V_instant)
+                            smooth_velocity = (self.alpha * prev_smooth_vel) + ((1.0 - self.alpha) * instant_velocity)
+                        else:
+                            smooth_velocity = prev_smooth_vel
+                    
+                    # 4. Thresholding: ถ้าขยับน้อยมาก ให้ถือว่าหยุดนิ่ง (ป้องกันไข่สั่นตอนคนยืนเฉยๆ)
+                    if smooth_velocity < self.min_vel_threshold:
+                        smooth_velocity = 0.0
 
-                    # 🔥 ส่งค่า velocity เข้าไปในฟังก์ชันสร้างไข่
-                    egg_marker = self.create_egg_marker(wx, wy, person_yaw, person_id, velocity)
+                    # อัปเดตประวัติ (เก็บค่า smooth_velocity ไว้ใช้ต่อในเฟรมหน้า)
+                    self.human_history[person_id] = {
+                        'pos': (wx, wy), 
+                        'time': now, 
+                        'vel': smooth_velocity
+                    }
+
+                    # 🔥 ส่งค่า smooth_velocity ไปสร้างไข่
+                    egg_marker = self.create_egg_marker(wx, wy, person_yaw, person_id, smooth_velocity)
                     all_markers.markers.append(egg_marker)
 
-                    cv2.putText(cv_image, f"V: {velocity:.1f} m/s", (x1, y1-50), 
+                    cv2.putText(cv_image, f"V: {smooth_velocity:.1f} m/s", (x1, y1-50), 
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
             self.marker_pub.publish(all_markers)
@@ -334,7 +353,7 @@ class HumanDetectionNode(Node):
                     valid_ranges.append(r)
 
         if not valid_ranges:
-            return 0.0
+            return 1000000.0
 
         # Use the median to eliminate outliers.
         return sorted(valid_ranges)[len(valid_ranges) // 2]
