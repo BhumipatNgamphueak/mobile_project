@@ -2,34 +2,7 @@
 """
 path_planning_node.py
 =====================
-TEB-style local planner with point obstacles.
-
-Pipeline (one cycle):
-  1. Costmap -> point obstacles
-       Extract occupied cells in a window around the robot.
-  2. Local segment extraction
-       Prune behind the robot, then take a lookahead window of the global
-       path. Warm-started from the previous optimised band so the trajectory
-       evolves smoothly across cycles.
-  3. TEB optimisation
-       Gradient descent on the elastic band against
-         - point obstacles (outward force inside an inflation zone)
-         - smoothness (pull toward midpoint of neighbours)
-       Endpoints fixed.
-  4. Holonomic velocity extraction
-       Vector pursuit on the optimised band -> (vx, vy, omega=0).
-
-Inputs
-------
-/odom           nav_msgs/Odometry       robot pose + velocity
-/global_path    nav_msgs/Path           reference path from global planner
-/local_costmap  nav_msgs/OccupancyGrid  obstacle grid in odom frame
-
-Outputs
--------
-/cmd_vel             geometry_msgs/TwistStamped       velocity command
-/planned_path        nav_msgs/Path                    optimised band (RViz)
-/obstacle_points     visualization_msgs/MarkerArray   extracted points (RViz)
+TEB-style local planner with point obstacles & Non-Holonomic Kinematics.
 """
 
 import math
@@ -46,6 +19,18 @@ def euclidean(p1: Pose, p2: Pose) -> float:
     return math.hypot(p1.position.x - p2.position.x,
                       p1.position.y - p2.position.y)
 
+def get_yaw(pose: Pose) -> float:
+    """Helper to extract yaw from a quaternion."""
+    qz = pose.orientation.z
+    qw = pose.orientation.w
+    return 2.0 * math.atan2(qz, qw)
+
+def normalize_angle(angle: float) -> float:
+    """Helper to wrap angles to [-pi, pi] to prevent infinite twisting."""
+    while angle > math.pi: angle -= 2.0 * math.pi
+    while angle < -math.pi: angle += 2.0 * math.pi
+    return angle
+
 
 class PathPlanningNode(Node):
 
@@ -54,18 +39,21 @@ class PathPlanningNode(Node):
 
         # ── General parameters ────────────────────────────────────────────
         self.planning_freq          = 10     # Hz
-        self.lookahead_dist         = 4.0   # m — local segment length
+        self.lookahead_dist         = 4.0    # m — local segment length
         self.min_waypoints_required = 2
         self.goal_tolerance         = 0.4    # m
 
         # ── TEB parameters ────────────────────────────────────────────────
         self.teb_n_iter      = 60      # gradient descent iterations / cycle
-        self.teb_w_obs       = 50.0 # 50.0    # obstacle repulsion weight
+        self.teb_w_obs       = 50.0    # obstacle repulsion weight
         self.teb_w_smooth    = 2.0     # elastic band weight
-        self.teb_inflation   = 1.0 # 0.5     # m — repulsion radius around points
+        self.teb_w_kin       = 10.0    # NEW: weight to enforce diff-drive steering
+        self.teb_inflation   = 1.0     # m — repulsion radius around points
         self.teb_step        = 0.05    # gradient step
         self.teb_max_delta   = 0.10    # m — clamp per-iteration movement
+        
         self.v_max           = 1.5     # m/s
+        self.omega_max       = 1.0     # rad/s
 
         self.teb_w_time      = 1.0     # weight to minimize total time
         self.teb_w_max_vel   = 10.0    # weight to penalize exceeding v_max
@@ -81,8 +69,8 @@ class PathPlanningNode(Node):
         self.create_subscription(OccupancyGrid,  '/local_costmap', self._local_costmap_callback, 10)
 
         # ── Publishers ────────────────────────────────────────────────────
-        self.cmd_vel_pub = self.create_publisher(TwistStamped, '/cmd_vel',           10)
-        self.path_pub    = self.create_publisher(Path,         '/planned_path',      10)
+        self.cmd_vel_pub  = self.create_publisher(TwistStamped, '/cmd_vel',           10)
+        self.path_pub     = self.create_publisher(Path,         '/planned_path',      10)
         self.obstacle_pub = self.create_publisher(MarkerArray,  '/obstacle_points',   10)
 
         # ── Internal state ────────────────────────────────────────────────
@@ -92,16 +80,16 @@ class PathPlanningNode(Node):
         self._local_costmap: OccupancyGrid | None = None
         self._prune_index: int                    = 0
 
-        # Warm start from previous optimised band.
+        # Warm start state (Now tracking theta headings as well)
         self._warm_xs: list[float] | None = None
         self._warm_ys: list[float] | None = None
+        self._warm_ths: list[float] | None = None
         self._warm_dts: list[float] | None = None
 
-        # Points extracted from current costmap (set each cycle).
         self._obstacle_points: list[tuple[float, float]] = []
 
         self.create_timer(1.0 / self.planning_freq, self._replan)
-        self.get_logger().info('PathPlanningNode (TEB point-style) started')
+        self.get_logger().info('PathPlanningNode (Diff-Drive TEB) started')
 
     # ──────────────────────────────────────────────────────────────────────
     # Callbacks
@@ -125,7 +113,6 @@ class PathPlanningNode(Node):
             same_goal = (abs(new_goal.x - old_goal.x) < 0.01 and
                          abs(new_goal.y - old_goal.y) < 0.01)
             if same_goal:
-                # Geometry changed but goal is the same — keep warm state.
                 self._global_path = msg
                 self._prune_index = 0
                 return
@@ -134,6 +121,7 @@ class PathPlanningNode(Node):
         self._prune_index = 0
         self._warm_xs     = None
         self._warm_ys     = None
+        self._warm_ths    = None
         self._warm_dts    = None
         self.get_logger().info(f'New goal received ({len(msg.poses)} waypoints)')
 
@@ -161,27 +149,24 @@ class PathPlanningNode(Node):
         if len(segment) < self.min_waypoints_required:
             return
 
-        # 3. TEB optimisation
-        opt_xs, opt_ys, opt_dts = self._teb_optimize(segment)
+        # 3. TEB optimisation (Now includes Theta variables)
+        opt_xs, opt_ys, opt_ths, opt_dts = self._teb_optimize(segment)
 
         # 4. Cache for next cycle's warm start
-        self._warm_xs = opt_xs[:]
-        self._warm_ys = opt_ys[:]
+        self._warm_xs  = opt_xs[:]
+        self._warm_ys  = opt_ys[:]
+        self._warm_ths = opt_ths[:]
         self._warm_dts = opt_dts[:]
 
         # 5. Publish optimised path & velocity
-        self._publish_path(opt_xs, opt_ys, segment[0].header.frame_id)
-        self.cmd_vel_pub.publish(self._compute_cmd_vel(opt_xs, opt_ys, opt_dts))
+        self._publish_path(opt_xs, opt_ys, opt_ths, segment[0].header.frame_id)
+        self.cmd_vel_pub.publish(self._compute_cmd_vel(opt_xs, opt_ys, opt_ths, opt_dts))
 
     # ──────────────────────────────────────────────────────────────────────
-    # Costmap -> Points
+    # Costmap & Obstacle Logic
     # ──────────────────────────────────────────────────────────────────────
 
     def _costmap_to_points(self) -> list[tuple[float, float]]:
-        """
-        Extract occupied cells as point obstacles.
-        Costmap is in odom frame, so points are returned in odom frame.
-        """
         cm   = self._local_costmap
         info = cm.info
         w, h = info.width, info.height
@@ -190,7 +175,6 @@ class PathPlanningNode(Node):
         oy   = info.origin.position.y
         data = cm.data
 
-        # Restrict scan to a window around the robot for performance.
         rx = self._robot_pose.position.x
         ry = self._robot_pose.position.y
         margin_cells = int((self.lookahead_dist + self.search_margin) / res)
@@ -212,14 +196,7 @@ class PathPlanningNode(Node):
                     points.append((wx, wy))
         return points
 
-    # ──────────────────────────────────────────────────────────────────────
-    # Point distance / obstacle force
-    # ──────────────────────────────────────────────────────────────────────
-
     def _obstacle_force(self, x: float, y: float) -> tuple[float, float]:
-        """
-        Returns the repulsive force on a waypoint from the closest point.
-        """
         if not self._obstacle_points:
             return 0.0, 0.0
 
@@ -237,7 +214,6 @@ class PathPlanningNode(Node):
         if best_d >= self.teb_inflation:
             return 0.0, 0.0
 
-        # Push away from boundary.
         vx, vy = x - best_px, y - best_py
         m = math.hypot(vx, vy)
         if m < 1e-9:
@@ -246,58 +222,36 @@ class PathPlanningNode(Node):
         return mag * vx / m, mag * vy / m
 
     # ──────────────────────────────────────────────────────────────────────
-    # TEB optimisation
+    # TEB optimisation (Upgraded with Kinematic Constraints)
     # ──────────────────────────────────────────────────────────────────────
 
-    def _teb_optimize(self,
-                      segment: list[PoseStamped]
-                      ) -> tuple[list[float], list[float], list[float]]:
-        """
-        Elastic band optimisation against point obstacles.
-
-        Anchoring:
-          The band is anchored at the *actual* robot pose (xs[0]) — not at
-          the closest global-path waypoint. This matters when the robot has
-          deviated laterally to avoid an obstacle: anchoring at the global
-          path would put xs[0] inside the inflation zone and the smoothness
-          force would keep dragging the band back into the obstacle.
-
-        Warm start:
-          Across cycles the previous solution is re-projected onto the new
-          band by *arc-length* parameterisation, not nearest-neighbour. This
-          preserves the avoidance shape even when the lateral deviation is
-          larger than the global-path waypoint spacing — preventing the
-          left/right flip-flop that produces in-and-out motion.
-
-        Endpoints (start = robot, end = lookahead goal) are fixed; only
-        interior nodes move. Per-iteration motion is clamped so the band
-        cannot teleport across narrow gaps.
-        """
+    def _teb_optimize(self, segment: list[PoseStamped]):
         rx = self._robot_pose.position.x
         ry = self._robot_pose.position.y
+        rth = get_yaw(self._robot_pose)
 
-        # Initial band: robot pose + global-path waypoints.
-        # Skip waypoints that would create a degenerate first segment.
-        xs = [rx]
-        ys = [ry]
+        xs  = [rx]
+        ys  = [ry]
+        ths = [rth]
+        
         skip_dist = 0.4
         for p in segment:
             px, py = p.pose.position.x, p.pose.position.y
             if math.hypot(px - xs[-1], py - ys[-1]) > skip_dist:
                 xs.append(px)
                 ys.append(py)
+                ths.append(get_yaw(p.pose))
 
         n = len(xs)
         if n < 2:
-            return xs, ys, [0.1]
+            return xs, ys, ths, [0.1]
 
-        # Initialize time intervals based on max velocity
         dts = []
         for i in range(n - 1):
             dist = math.hypot(xs[i + 1] - xs[i], ys[i + 1] - ys[i])
             dts.append(max(0.01, dist / self.v_max))
 
-        # ── Warm start: arc-length re-projection of previous band ────────
+        # ── Warm start ────────
         if self._warm_xs and self._warm_ys and self._warm_dts and len(self._warm_xs) >= 2:
             warm_xs, warm_ys, warm_dts = self._warm_xs, self._warm_ys, self._warm_dts
             warm_arc = [0.0]
@@ -305,15 +259,14 @@ class PathPlanningNode(Node):
                 warm_arc.append(warm_arc[-1] + math.hypot(
                     warm_xs[k] - warm_xs[k - 1],
                     warm_ys[k] - warm_ys[k - 1]))
-            L_warm = warm_arc[-1] # old length
+            L_warm = warm_arc[-1]
 
             new_arc = [0.0]
             for k in range(1, n):
                 new_arc.append(new_arc[-1] + math.hypot(
                     xs[k] - xs[k - 1], ys[k] - ys[k - 1]))
-            L_new = new_arc[-1]  # new length
+            L_new = new_arc[-1]
 
-            # Interpolating new length
             if L_warm > 1e-3 and L_new > 1e-3:
                 for i in range(1, n - 1):
                     target = (new_arc[i] / L_new) * L_warm
@@ -327,93 +280,100 @@ class PathPlanningNode(Node):
                                 xs[i] = warm_xs[k] + a * (warm_xs[k + 1] - warm_xs[k])
                                 ys[i] = warm_ys[k] + a * (warm_ys[k + 1] - warm_ys[k])
                             break
-                # Simple interpolation for dt based on relative lengths
+                            
                 len_ratio = L_new / L_warm
                 for i in range(min(len(dts), len(warm_dts))):
                     dts[i] = warm_dts[i] * len_ratio
+                    
+            # Initialize inner headings toward the next node
+            ths[0] = rth
+            for i in range(1, n - 1):
+                ths[i] = math.atan2(ys[i+1] - ys[i], xs[i+1] - xs[i])
+            ths[-1] = get_yaw(segment[-1].pose)
 
+        # ── Optimization Loop ────────
         step        = self.teb_step
         max_delta   = self.teb_max_delta
         max_delta_t = self.teb_max_delta_t
         w_obs       = self.teb_w_obs
         w_smooth    = self.teb_w_smooth
+        w_kin       = self.teb_w_kin
         w_time      = self.teb_w_time
         w_max_vel   = self.teb_w_max_vel
         v_max       = self.v_max
 
         for _ in range(self.teb_n_iter):
-            # Accumulate forces
-            fx = [0.0] * n
-            fy = [0.0] * n
-            fdt = [0.0] * (n - 1)
+            fx  = [0.0] * n
+            fy  = [0.0] * n
+            fth = [0.0] * n
 
             # 1. Obstacle & Smoothness forces
             for i in range(1, n - 1):
                 fx_obs, fy_obs = self._obstacle_force(xs[i], ys[i])
 
-                # Smoothness force (elastic band): pull toward midpoint.
+                # Spatial Smoothness
                 f_sx = (xs[i - 1] + xs[i + 1]) / 2.0 - xs[i]
                 f_sy = (ys[i - 1] + ys[i + 1]) / 2.0 - ys[i]
 
-                fx[i] += w_obs * fx_obs + w_smooth * f_sx
-                fy[i] += w_obs * fy_obs + w_smooth * f_sy
+                # Angular Smoothness (with safe wrapping)
+                diff_th = normalize_angle(ths[i + 1] - ths[i - 1])
+                target_th = normalize_angle(ths[i - 1] + diff_th / 2.0)
+                f_sth = normalize_angle(target_th - ths[i])
 
-            # 2. Velocity & Time forces
+                fx[i]  += w_obs * fx_obs + w_smooth * f_sx
+                fy[i]  += w_obs * fy_obs + w_smooth * f_sy
+                fth[i] += w_smooth * f_sth
+
+            # 2. Kinematics, Velocity, and Time forces
             for i in range(n - 1):
                 dx = xs[i + 1] - xs[i]
                 dy = ys[i + 1] - ys[i]
-                dist = math.hypot(dx, dy)
                 dt = dts[i]
+                dist = math.hypot(dx, dy)
                 v = dist / dt
-
-                # Time force (fastest path objective)
-                fdt[i] -= w_time
-
-                # Velocity limit penalty
-                if v > v_max:
-                    delta_v = v - v_max
-                    # Force on dt: derivative of C_v w.r.t dt is -weight * delta_v * (v / dt)
-                    # We negate it for gradient descent update
-                    fdt[i] += w_max_vel * delta_v * (v / dt)
-
-                    if v > 1e-6:
-                        # Force on x, y: derivative of C_v w.r.t x_i
-                        # We negate it for gradient descent update
-                        fx_vel = w_max_vel * delta_v * (dx / (v * dt * dt))
-                        fy_vel = w_max_vel * delta_v * (dy / (v * dt * dt))
-                        fx[i] += fx_vel
-                        fy[i] += fy_vel
-                        fx[i + 1] -= fx_vel
-                        fy[i + 1] -= fy_vel
+                
+                # NON-HOLONOMIC KINEMATIC CONSTRAINT 
+                # Penalize lateral movement (sideways slip)
+                sin_th = math.sin(ths[i])
+                cos_th = math.cos(ths[i])
+                c_kin = -dx * sin_th + dy * cos_th
+                
+                # Gradients pulling band to strictly align with heading
+                fx[i]   += -w_kin * c_kin * sin_th
+                fx[i+1] +=  w_kin * c_kin * sin_th
+                fy[i]   +=  w_kin * c_kin * cos_th
+                fy[i+1] += -w_kin * c_kin * cos_th
+                
+                # Theta gradient (only applied to free inner nodes)
+                if i > 0:
+                    fth[i] += -w_kin * c_kin * (-dx * cos_th - dy * sin_th)
 
             # 3. Apply updates
             for i in range(1, n - 1):
-                dx = step * fx[i]
-                dy = step * fy[i]
-                mag = math.hypot(dx, dy)
-                if mag > max_delta:
-                    dx *= max_delta / mag
-                    dy *= max_delta / mag
-                xs[i] += dx
-                ys[i] += dy
+                # Clamp positional steps
+                dx_step = max(min(step * fx[i], max_delta), -max_delta)
+                dy_step = max(min(step * fy[i], max_delta), -max_delta)
+                # Clamp rotational steps
+                dth_step = max(min(step * fth[i], 0.2), -0.2)
+                
+                xs[i] += dx_step
+                ys[i] += dy_step
+                ths[i] = normalize_angle(ths[i] + dth_step)
 
-            for i in range(n - 1):
-                ddt = step * fdt[i]
-                if ddt > max_delta_t:
-                    ddt = max_delta_t
-                elif ddt < -max_delta_t:
-                    ddt = -max_delta_t
-                dts[i] += ddt
-                dts[i] = max(0.01, dts[i]) # clamp to prevent negative time
+        # Recalculate dts purely based on geometry at the end
+        for i in range(n - 1):
+            dist = math.hypot(xs[i + 1] - xs[i], ys[i + 1] - ys[i])
+            dts[i] = max(0.01, dist / self.v_max)
 
-        return xs, ys, dts
+        return xs, ys, ths, dts
 
     # ──────────────────────────────────────────────────────────────────────
-    # Velocity extraction (True TEB execution)
+    # Diff-Drive Velocity Extraction
     # ──────────────────────────────────────────────────────────────────────
     def _compute_cmd_vel(self,
                          opt_xs: list[float],
                          opt_ys: list[float],
+                         opt_ths: list[float],
                          opt_dts: list[float]) -> TwistStamped:
         cmd = TwistStamped()
         cmd.header.stamp    = self.get_clock().now().to_msg()
@@ -422,41 +382,40 @@ class PathPlanningNode(Node):
         if not opt_xs or len(opt_xs) < 2 or not opt_dts:
             return cmd
 
-        rx  = self._robot_pose.position.x
-        ry  = self._robot_pose.position.y
-        qz  = self._robot_pose.orientation.z
-        qw  = self._robot_pose.orientation.w
-        yaw = 2.0 * math.atan2(qz, qw)
-        cos_y = math.cos(yaw)
-        sin_y = math.sin(yaw)
-
-        # 1. Decelerate near goal.
-        d_goal = euclidean(self._robot_pose, self._global_path.poses[-1].pose)
+        yaw = get_yaw(self._robot_pose)
         
-        # 2. True TEB velocity: velocity of the first segment
-        # In a real TEB, the robot is meant to follow the trajectory encoded in the first segment
+        # 1. Forward Speed (v_x)
         dxw = opt_xs[1] - opt_xs[0]
         dyw = opt_ys[1] - opt_ys[0]
         dt = opt_dts[0]
 
-        # Convert world-frame velocity to body-frame velocity
-        vx_world = dxw / dt
-        vy_world = dyw / dt
-
-        vx_body =  vx_world * cos_y + vy_world * sin_y
-        vy_body = -vx_world * sin_y + vy_world * cos_y
-
-        v_mag = math.hypot(vx_body, vy_body)
-
-        # 3. Apply deceleration near goal and ensure we do not exceed v_max
+        # Extract velocity projected strictly along the robot's current heading
+        vx_body = (dxw * math.cos(yaw) + dyw * math.sin(yaw)) / dt
+        
+        # Decelerate near goal
+        d_goal = euclidean(self._robot_pose, self._global_path.poses[-1].pose)
         v_target_limit = min(self.v_max, max(0.05, d_goal * 1.5))
-        if v_mag > v_target_limit:
-            vx_body *= v_target_limit / v_mag
-            vy_body *= v_target_limit / v_mag
+        
+        if vx_body > v_target_limit:
+            vx_body = v_target_limit
+        elif vx_body < -v_target_limit:
+            vx_body = -v_target_limit
 
+        # 2. Rotational Speed (omega_z)
+        # Difference between current yaw and the optimized next node's yaw
+        dth = normalize_angle(opt_ths[1] - yaw)
+        omega = dth / dt
+        
+        if omega > self.omega_max:
+            omega = self.omega_max
+        elif omega < -self.omega_max:
+            omega = -self.omega_max
+
+        # Strict Diff-Drive assignment
         cmd.twist.linear.x  = vx_body
-        cmd.twist.linear.y  = vy_body
-        cmd.twist.angular.z = 0.0
+        cmd.twist.linear.y  = 0.0  # Sideways velocity is rigidly set to 0.0
+        cmd.twist.angular.z = omega
+        
         return cmd
 
     def _pub_stop(self):
@@ -466,7 +425,7 @@ class PathPlanningNode(Node):
         self.cmd_vel_pub.publish(cmd)
 
     # ──────────────────────────────────────────────────────────────────────
-    # Visualization
+    # Visualization & Helpers
     # ──────────────────────────────────────────────────────────────────────
 
     def _publish_points(self):
@@ -474,7 +433,6 @@ class PathPlanningNode(Node):
         frame = self._local_costmap.header.frame_id
         stamp = self.get_clock().now().to_msg()
 
-        # Clear previous points before drawing new ones.
         clear = Marker()
         clear.header.frame_id = frame
         clear.action = Marker.DELETEALL
@@ -501,30 +459,23 @@ class PathPlanningNode(Node):
 
         self.obstacle_pub.publish(ma)
 
-    def _publish_path(self, xs: list[float], ys: list[float], frame: str):
+    def _publish_path(self, xs: list[float], ys: list[float], ths: list[float], frame: str):
         n = len(xs)
         stamp = self.get_clock().now().to_msg()
         path_msg = Path()
         path_msg.header.stamp    = stamp
         path_msg.header.frame_id = frame
         for i in range(n):
-            theta = math.atan2(
-                ys[min(i + 1, n - 1)] - ys[max(i - 1, 0)],
-                xs[min(i + 1, n - 1)] - xs[max(i - 1, 0)]
-            )
             ps = PoseStamped()
             ps.header.frame_id    = frame
             ps.header.stamp       = stamp
             ps.pose.position.x    = xs[i]
             ps.pose.position.y    = ys[i]
-            ps.pose.orientation.z = math.sin(theta / 2.0)
-            ps.pose.orientation.w = math.cos(theta / 2.0)
+            # Use the mathematically optimized headings for Rviz orientation
+            ps.pose.orientation.z = math.sin(ths[i] / 2.0)
+            ps.pose.orientation.w = math.cos(ths[i] / 2.0)
             path_msg.poses.append(ps)
         self.path_pub.publish(path_msg)
-
-    # ──────────────────────────────────────────────────────────────────────
-    # Path helpers
-    # ──────────────────────────────────────────────────────────────────────
 
     def _find_closest_index(self) -> int:
         wp = self._global_path.poses
