@@ -555,7 +555,6 @@ class PathPlanningNode(Node):
     # ──────────────────────────────────────────────────────────────────────
     # Velocity extraction (holonomic vector pursuit)
     # ──────────────────────────────────────────────────────────────────────
-
     def _compute_cmd_vel(self,
                          opt_xs: list[float],
                          opt_ys: list[float]) -> TwistStamped:

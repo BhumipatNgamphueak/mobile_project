@@ -90,6 +90,7 @@ class LocalCostMapNode(Node):
         grid_data = [0] * (self.width_cells * self.height_cells)
         obstacle_cells = set()
 
+        # Find obstacle
         current_angle = msg.angle_min
         for r in msg.ranges:
             if msg.range_min < r < msg.range_max:
@@ -106,7 +107,8 @@ class LocalCostMapNode(Node):
                     obstacle_cells.add((cx, cy))
             current_angle += msg.angle_increment
 
-        for ox, oy in obstacle_cells:
+        # Add cost to cost map
+        for ox, oy in obstacle_cells: # Search all
             for dx, dy, cost in self.inflation_kernel:
                 nx, ny = ox + dx, oy + dy
                 if 0 <= nx < self.width_cells and 0 <= ny < self.height_cells:
