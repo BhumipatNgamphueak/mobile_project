@@ -55,7 +55,7 @@ class PathPlanningNode(Node):
         # ── General parameters ────────────────────────────────────────────
         self.planning_freq          = 10     # Hz
         self.lookahead_dist         = 4.0   # m — local segment length
-        self.min_waypoints_required = 2
+        self.min_waypoints_required = 0
         self.goal_tolerance         = 0.4    # m
 
         # ── TEB parameters ────────────────────────────────────────────────
@@ -66,10 +66,6 @@ class PathPlanningNode(Node):
         self.teb_step        = 0.05    # gradient step
         self.teb_max_delta   = 0.10    # m — clamp per-iteration movement
         self.v_max           = 1.5     # m/s
-
-        self.teb_w_time      = 1.0     # weight to minimize total time
-        self.teb_w_max_vel   = 10.0    # weight to penalize exceeding v_max
-        self.teb_max_delta_t = 0.1     # clamp per-iteration dt movement
 
         # ── Costmap-to-points parameters ────────────────────────────────
         self.obstacle_threshold = 60    # cost >= this -> obstacle cell
@@ -95,7 +91,6 @@ class PathPlanningNode(Node):
         # Warm start from previous optimised band.
         self._warm_xs: list[float] | None = None
         self._warm_ys: list[float] | None = None
-        self._warm_dts: list[float] | None = None
 
         # Points extracted from current costmap (set each cycle).
         self._obstacle_points: list[tuple[float, float]] = []
@@ -134,7 +129,6 @@ class PathPlanningNode(Node):
         self._prune_index = 0
         self._warm_xs     = None
         self._warm_ys     = None
-        self._warm_dts    = None
         self.get_logger().info(f'New goal received ({len(msg.poses)} waypoints)')
 
     # ──────────────────────────────────────────────────────────────────────
@@ -158,20 +152,22 @@ class PathPlanningNode(Node):
         # 2. Reference segment from global path
         self._prune_index = self._find_closest_index()
         segment = self._extract_local_segment()
+        # print(f'Segment length: {len(segment)}')
         if len(segment) < self.min_waypoints_required:
             return
 
+
         # 3. TEB optimisation
-        opt_xs, opt_ys, opt_dts = self._teb_optimize(segment)
+        opt_xs, opt_ys = self._teb_optimize(segment)
+        print(len(opt_xs))
 
         # 4. Cache for next cycle's warm start
         self._warm_xs = opt_xs[:]
         self._warm_ys = opt_ys[:]
-        self._warm_dts = opt_dts[:]
 
         # 5. Publish optimised path & velocity
         self._publish_path(opt_xs, opt_ys, segment[0].header.frame_id)
-        self.cmd_vel_pub.publish(self._compute_cmd_vel(opt_xs, opt_ys, opt_dts))
+        self.cmd_vel_pub.publish(self._compute_cmd_vel(opt_xs, opt_ys))
 
     # ──────────────────────────────────────────────────────────────────────
     # Costmap -> Points
@@ -227,6 +223,7 @@ class PathPlanningNode(Node):
         best_px = 0.0
         best_py = 0.0
 
+        # nearest obstacle point
         for px, py in self._obstacle_points:
             d = math.hypot(x - px, y - py)
             if d < best_d:
@@ -234,16 +231,17 @@ class PathPlanningNode(Node):
                 best_px = px
                 best_py = py
 
-        if best_d >= self.teb_inflation:
+        if best_d >= self.teb_inflation: # nearest distance >= inflation radius -> no force
             return 0.0, 0.0
 
         # Push away from boundary.
         vx, vy = x - best_px, y - best_py
         m = math.hypot(vx, vy)
-        if m < 1e-9:
+        if m < 1e-9: # force is zero when distance is zero (same position)
             return 0.0, 0.0
-        mag = self.teb_inflation - best_d
-        return mag * vx / m, mag * vy / m
+
+        mag = self.teb_inflation - best_d # repulsion force magnitude is proportional to the distance from the obstacle
+        return mag * vx / m, mag * vy / m # repulsion force vector is perpendicular to the obstacle
 
     # ──────────────────────────────────────────────────────────────────────
     # TEB optimisation
@@ -257,10 +255,7 @@ class PathPlanningNode(Node):
 
         Anchoring:
           The band is anchored at the *actual* robot pose (xs[0]) — not at
-          the closest global-path waypoint. This matters when the robot has
-          deviated laterally to avoid an obstacle: anchoring at the global
-          path would put xs[0] inside the inflation zone and the smoothness
-          force would keep dragging the band back into the obstacle.
+          the closest global-path waypoint. 
 
         Warm start:
           Across cycles the previous solution is re-projected onto the new
@@ -298,8 +293,8 @@ class PathPlanningNode(Node):
             dts.append(max(0.01, dist / self.v_max))
 
         # ── Warm start: arc-length re-projection of previous band ────────
-        if self._warm_xs and self._warm_ys and self._warm_dts and len(self._warm_xs) >= 2:
-            warm_xs, warm_ys, warm_dts = self._warm_xs, self._warm_ys, self._warm_dts
+        if self._warm_xs and self._warm_ys and len(self._warm_xs) >= 2:
+            warm_xs, warm_ys = self._warm_xs, self._warm_ys
             warm_arc = [0.0]
             for k in range(1, len(warm_xs)):
                 warm_arc.append(warm_arc[-1] + math.hypot(
@@ -327,25 +322,16 @@ class PathPlanningNode(Node):
                                 xs[i] = warm_xs[k] + a * (warm_xs[k + 1] - warm_xs[k])
                                 ys[i] = warm_ys[k] + a * (warm_ys[k + 1] - warm_ys[k])
                             break
-                # Simple interpolation for dt based on relative lengths
-                len_ratio = L_new / L_warm
-                for i in range(min(len(dts), len(warm_dts))):
-                    dts[i] = warm_dts[i] * len_ratio
 
         step        = self.teb_step
         max_delta   = self.teb_max_delta
-        max_delta_t = self.teb_max_delta_t
         w_obs       = self.teb_w_obs
         w_smooth    = self.teb_w_smooth
-        w_time      = self.teb_w_time
-        w_max_vel   = self.teb_w_max_vel
-        v_max       = self.v_max
 
         for _ in range(self.teb_n_iter):
             # Accumulate forces
             fx = [0.0] * n
             fy = [0.0] * n
-            fdt = [0.0] * (n - 1)
 
             # 1. Obstacle & Smoothness forces
             for i in range(1, n - 1):
@@ -358,34 +344,6 @@ class PathPlanningNode(Node):
                 fx[i] += w_obs * fx_obs + w_smooth * f_sx
                 fy[i] += w_obs * fy_obs + w_smooth * f_sy
 
-            # 2. Velocity & Time forces
-            for i in range(n - 1):
-                dx = xs[i + 1] - xs[i]
-                dy = ys[i + 1] - ys[i]
-                dist = math.hypot(dx, dy)
-                dt = dts[i]
-                v = dist / dt
-
-                # Time force (fastest path objective)
-                fdt[i] -= w_time
-
-                # Velocity limit penalty
-                if v > v_max:
-                    delta_v = v - v_max
-                    # Force on dt: derivative of C_v w.r.t dt is -weight * delta_v * (v / dt)
-                    # We negate it for gradient descent update
-                    fdt[i] += w_max_vel * delta_v * (v / dt)
-
-                    if v > 1e-6:
-                        # Force on x, y: derivative of C_v w.r.t x_i
-                        # We negate it for gradient descent update
-                        fx_vel = w_max_vel * delta_v * (dx / (v * dt * dt))
-                        fy_vel = w_max_vel * delta_v * (dy / (v * dt * dt))
-                        fx[i] += fx_vel
-                        fy[i] += fy_vel
-                        fx[i + 1] -= fx_vel
-                        fy[i + 1] -= fy_vel
-
             # 3. Apply updates
             for i in range(1, n - 1):
                 dx = step * fx[i]
@@ -397,29 +355,20 @@ class PathPlanningNode(Node):
                 xs[i] += dx
                 ys[i] += dy
 
-            for i in range(n - 1):
-                ddt = step * fdt[i]
-                if ddt > max_delta_t:
-                    ddt = max_delta_t
-                elif ddt < -max_delta_t:
-                    ddt = -max_delta_t
-                dts[i] += ddt
-                dts[i] = max(0.01, dts[i]) # clamp to prevent negative time
 
-        return xs, ys, dts
+        return xs, ys
 
     # ──────────────────────────────────────────────────────────────────────
     # Velocity extraction (True TEB execution)
     # ──────────────────────────────────────────────────────────────────────
     def _compute_cmd_vel(self,
                          opt_xs: list[float],
-                         opt_ys: list[float],
-                         opt_dts: list[float]) -> TwistStamped:
+                         opt_ys: list[float]) -> TwistStamped:
         cmd = TwistStamped()
         cmd.header.stamp    = self.get_clock().now().to_msg()
         cmd.header.frame_id = 'base_link'
 
-        if not opt_xs or len(opt_xs) < 2 or not opt_dts:
+        if not opt_xs or len(opt_xs) < 2:
             return cmd
 
         rx  = self._robot_pose.position.x
@@ -437,19 +386,14 @@ class PathPlanningNode(Node):
         # In a real TEB, the robot is meant to follow the trajectory encoded in the first segment
         dxw = opt_xs[1] - opt_xs[0]
         dyw = opt_ys[1] - opt_ys[0]
-        dt = opt_dts[0]
 
         # Convert world-frame velocity to body-frame velocity
-        vx_world = dxw / dt
-        vy_world = dyw / dt
-
-        vx_body =  vx_world * cos_y + vy_world * sin_y
-        vy_body = -vx_world * sin_y + vy_world * cos_y
-
-        v_mag = math.hypot(vx_body, vy_body)
+        vx_body =  dxw * cos_y + dyw * sin_y
+        vy_body = -dxw * sin_y + dyw * cos_y
 
         # 3. Apply deceleration near goal and ensure we do not exceed v_max
         v_target_limit = min(self.v_max, max(0.05, d_goal * 1.5))
+        v_mag = math.hypot(vx_body, vy_body)
         if v_mag > v_target_limit:
             vx_body *= v_target_limit / v_mag
             vy_body *= v_target_limit / v_mag
