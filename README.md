@@ -4,6 +4,19 @@ A research simulation platform for developing and testing **human detection**, *
 
 Three skeleton packages ship with full ROS 2 infrastructure wired up. Each developer only needs to fill in their algorithm inside the clearly marked `TODO` stubs — everything else (simulation, bridges, odometry, visualisation) is already running.
 
+## Contents
+
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [Running the Simulation](#running-the-simulation) — launch commands, world catalog, launch args, test paths
+- [Adjusting Human Walking Speed](#adjusting-human-walking-speed) — `scale_human_speed` tool
+- [Architecture](#architecture) — how Gazebo, ROS, and your algorithms fit together
+- [ROS Interface Map](#ros-interface-map) — every topic and service worth knowing
+- [World Geometry](#world-geometry) — frame conventions, default-world layout
+- [Developer Guide](#developer-guide) — `human_detection`, `path_planning`, `pure_pursuit` reference
+- [Project Structure](#project-structure)
+- [Troubleshooting](#troubleshooting)
+
 ---
 
 ## Prerequisites
@@ -109,7 +122,7 @@ ros2 launch mecanum_robot_sim spawn_mecanum.launch.py world:=world3_cross_opposi
 | `evaluate` | `false` | Save a tracking-error PNG when goal is reached |
 | `spawn_x` | `-8.0` | Robot spawn x in world frame |
 | `spawn_y` | `0.0` | Robot spawn y in world frame |
-| `time_scale` | `1.0` | Scale factor applied to the *kinematic-model controller* only — useful for debugging marker drift; for normal use, edit waypoint speeds via `scale_human_speed` instead |
+| `time_scale` | `1.0` | Slows or speeds the kinematic-model controller only (it does not retime the visible actor's animation). Leave at `1.0` for normal use — to change human speed properly, use [`scale_human_speed`](#adjusting-human-walking-speed) which retimes both. |
 
 ### Test paths (bypass path_planning)
 
@@ -163,6 +176,11 @@ Re-launch Gazebo after editing speeds. Round-trip is safe: scaling by 0.5 then 2
 
 ## Architecture
 
+**Why each human is two SDF entities (model + actor):** Ignition Fortress does *not* publish `<actor>` poses to any topic, so actors alone cannot serve as ground truth. Each human is therefore split:
+
+- A **`<model name="human_*">`** with `<static>true</static>`, only collision (no visual). It carries a `<plugin filename="__waypoints__">` block holding the trajectory. `human_controller` teleports it via `/world/<w>/set_pose`, which causes its pose to appear in `/gz_dynamic_poses` — that's the ground truth ROS sees.
+- A sibling **`<actor name="human_*_anim">`** with the walk.dae mesh and the same waypoints, set to `<interpolate_x>false</interpolate_x>` so Gazebo paces the animation by waypoint times, not the animation file's natural stride. The visible mesh and the invisible model end up at the same world position every frame.
+
 ```
                 ┌────────────────────────── Ignition Gazebo ──────────────────────────┐
                 │                                                                     │
@@ -209,11 +227,11 @@ Re-launch Gazebo after editing speeds. Round-trip is safe: scaling by 0.5 then 2
           /cmd_vel_gz  ──► Ignition VelocityControl
 ```
 
-**Why kinematic models for humans:** Ignition Fortress does *not* publish `<actor>` poses to any topic, so actors alone can't be used as ground truth. Each human is split in two: a `<static>true</static>` `<model>` (no visual, just collision + a `<plugin filename="__waypoints__">` block carrying the trajectory) gets teleported by `human_controller` via `/world/<w>/set_pose`, which makes its pose appear in `/gz_dynamic_poses`. A sibling `<actor>` named `<name>_anim` shares the same waypoints with `<interpolate_x>false</interpolate_x>`, so Gazebo plays the walk animation at exactly the same pace the controller drives the model — visible mesh and ground-truth pose stay in sync by construction.
-
 ---
 
-## Topic Interface Map
+## ROS Interface Map
+
+### Topics
 
 | Topic | Type | Publisher | Subscriber |
 |-------|------|-----------|------------|
@@ -222,7 +240,6 @@ Re-launch Gazebo after editing speeds. Round-trip is safe: scaling by 0.5 then 2
 | `/imu` | `sensor_msgs/Imu` | Gazebo bridge | *(available)* |
 | `/odom` | `nav_msgs/Odometry` | `gz_pose_odom` | `path_planning`, `pure_pursuit` |
 | `/gz_dynamic_poses` | `tf2_msgs/TFMessage` | Gazebo bridge | `gz_pose_odom`, `human_marker_publisher` |
-| `/world/<w>/set_pose` | `ros_gz_interfaces/srv/SetEntityPose` | bridge → Gazebo | `human_controller` |
 | `/goal_pose` | `geometry_msgs/PoseStamped` | operator | `path_planning` |
 | `/detected_human_poses` | `geometry_msgs/PoseArray` | `human_detection` | `path_planning` |
 | `/detected_humans` | `visualization_msgs/MarkerArray` | `human_detection` | RViz |
@@ -232,6 +249,12 @@ Re-launch Gazebo after editing speeds. Round-trip is safe: scaling by 0.5 then 2
 | `/planned_path` | `nav_msgs/Path` | `path_planning` | `pure_pursuit` |
 | `/real_map` | `nav_msgs/OccupancyGrid` | `path_planning` | `pure_pursuit`, RViz |
 | `/cmd_vel` | `geometry_msgs/TwistStamped` | `pure_pursuit` | `cmd_vel_relay` |
+
+### Services
+
+| Service | Type | Provider | Caller |
+|---------|------|----------|--------|
+| `/world/<w>/set_pose` | `ros_gz_interfaces/srv/SetEntityPose` | `set_pose_bridge` (bridges Gazebo) | `human_controller` |
 
 ---
 
@@ -340,9 +363,7 @@ def _stub_plan(self) -> Path | None:
 | `self._human_poses` | `list[Pose]` | from `/detected_human_poses` |
 | `self._static_obstacles` | `list[(cx, cy, half_size)]` | hardcoded from SDF |
 
-**Static map** is already built and published on `/real_map` (200×200 cells, 0.1 m resolution, origin at odom (−3, −14)).
-Use it as the grid for A* or similar — static obstacles and walls are already marked.
-Inflate human positions by `self.human_radius` (default 0.6 m) before planning.
+**Static map** is already built and published on `/real_map` as a `nav_msgs/OccupancyGrid` with 0.1 m resolution covering the 20 × 20 m arena. Static obstacles and walls are already marked. The map's `info.origin` is set so cells line up with the odom frame for the *current* `spawn_x` / `spawn_y` — read it from the message header rather than hardcoding numbers, so your planner stays correct when someone changes the spawn argument or switches worlds. Inflate human positions by `self.human_radius` (default 0.6 m) before planning.
 
 **Path contract with pure_pursuit:**
 
