@@ -5,20 +5,14 @@ Panels:
     Property Tree Widget:
       Expanded:
         - /Global Options1
+        - /Ground Grid1
         - /Robot Model1
-        - /TF1
-        - /Humans1
+        - /Robot Direction1
+        - /World Ground Truth1
         - /Human Predicted Paths1
-        - /Robot Trail1
-        - /Static Obstacles1
-        - /Odometry1
         - /LiDAR Scan1
-        - /Real Map1
-        - /Detected Humans1
-        - /Planned Path1
-        - /Actual Path1
-      Splitter Ratio: 0.6
-    Tree Height: 800
+      Splitter Ratio: 0.55
+    Tree Height: 900
   - Class: rviz_common/Views
     Name: Views
     Splitter Ratio: 0.5
@@ -27,13 +21,14 @@ Visualization Manager:
   Class: ""
   Displays:
 
+    # ─────────────────────────────  GROUND GRID  ─────────────────────────────
     - Class: rviz_default_plugins/Grid
       Name: Ground Grid
-      Alpha: 0.4
-      Cell Size: 1
-      Color: 160; 160; 164
+      Alpha: 0.30
+      Cell Size: 1.0
+      Color: 90; 90; 90
       Line Style:
-        Line Width: 0.03
+        Line Width: 0.02
         Value: Lines
       Normal Cell Count: 0
       Offset:
@@ -41,13 +36,14 @@ Visualization Manager:
         Y: 0
         Z: 0
       Plane: XY
-      Plane Cell Count: 30
-      Reference Frame: <Fixed Frame>
+      Plane Cell Count: 32
+      Reference Frame: odom
       Value: true
 
+    # ───────────────────────────────  ROBOT  ─────────────────────────────────
     - Class: rviz_default_plugins/RobotModel
       Name: Robot Model
-      Alpha: 1
+      Alpha: 1.0
       Description File: ""
       Description Source: Topic
       Description Topic: /robot_description
@@ -57,7 +53,7 @@ Visualization Manager:
       Value: true
 
     - Class: rviz_default_plugins/TF
-      Name: TF
+      Name: TF Frames
       Enabled: true
       Frame Timeout: 15
       Frames:
@@ -66,21 +62,7 @@ Visualization Manager:
           Value: true
         odom:
           Value: true
-        lidar_link:
-          Value: true
-        camera_link:
-          Value: false
-        imu_link:
-          Value: false
-        front_left_wheel:
-          Value: false
-        front_right_wheel:
-          Value: false
-        rear_left_wheel:
-          Value: false
-        rear_right_wheel:
-          Value: false
-      Marker Scale: 0.5
+      Marker Scale: 0.7
       Show Arrows: true
       Show Axes: true
       Show Names: true
@@ -91,24 +73,63 @@ Visualization Manager:
       Update Interval: 0
       Value: true
 
-    # ── Simulated humans (ground truth from human_marker_publisher) ───────
-
-    - Class: rviz_default_plugins/MarkerArray
-      Name: Humans
+    - Class: rviz_default_plugins/Odometry
+      Name: Robot Direction
       Enabled: true
-      Namespaces:
-        human_body: true
-        human_label: true
-        human_vel: true
+      Angle Tolerance: 0.02
+      Color: 0; 220; 255
+      Color Style: Unique
+      Keep: 1
+      Length: 0.9
+      Position Tolerance: 0.01
+      Shape:
+        Alpha: 1.0
+        Axes Length: 0.5
+        Axes Radius: 0.03
+        Color: 0; 220; 255
+        Head Length: 0.20
+        Head Radius: 0.10
+        Shaft Length: 0.65
+        Shaft Radius: 0.05
+        Value: Arrow
       Topic:
         Depth: 5
         Durability Policy: Volatile
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /visualization/humans
+        Value: /odom
       Value: true
 
+    # ────────────────────────  WORLD GROUND TRUTH  ──────────────────────────
+    # Single MarkerArray emitted by human_marker_publisher.py.
+    # Includes namespaces:
+    #   walls         — boundary walls (semi-transparent grey CUBE)
+    #   wall_edges    — bright outline so walls stay readable
+    #   obstacles     — static obstacles from the SDF
+    #   humans        — live actor cylinders
+    #   human_labels  — actor names floating above each cylinder
+    #   human_vel     — velocity arrow (only when moving)
+    - Class: rviz_default_plugins/MarkerArray
+      Name: World Ground Truth
+      Enabled: true
+      Namespaces:
+        walls:        true
+        wall_edges:   true
+        obstacles:    true
+        humans:       true
+        human_labels: true
+        human_vel:    true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /visualization/world
+      Value: true
+
+    # Dotted spheres showing each human's predicted position over the next ~3 s
     - Class: rviz_default_plugins/MarkerArray
       Name: Human Predicted Paths
       Enabled: true
@@ -123,137 +144,7 @@ Visualization Manager:
         Value: /visualization/human_paths
       Value: true
 
-    # ── Robot history & static obstacles ──────────────────────────────────
-
-    - Class: rviz_default_plugins/Path
-      Name: Robot Trail
-      Alpha: 1
-      Buffer Length: 1
-      Color: 25; 255; 0
-      Enabled: true
-      Head Diameter: 0.3
-      Head Length: 0.2
-      Length: 0.3
-      Line Style: Lines
-      Line Width: 0.05
-      Offset:
-        X: 0
-        Y: 0
-        Z: 0
-      Pose Color: 255; 85; 255
-      Pose Style: None
-      Radius: 0.03
-      Shaft Diameter: 0.1
-      Shaft Length: 0.1
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        Filter size: 10
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /visualization/robot_trail
-      Value: true
-
-    - Class: rviz_default_plugins/MarkerArray
-      Name: Static Obstacles
-      Enabled: true
-      Namespaces:
-        obstacles: true
-        obstacle_wire: true
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        Filter size: 10
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /visualization/obstacles
-      Value: true
-
-    - Class: rviz_default_plugins/Odometry
-      Name: Odometry
-      Enabled: true
-      Angle Tolerance: 0.1
-      Color: 255; 25; 0
-      Color Style: Unique
-      Keep: 50
-      Length: 0.3
-      Position Tolerance: 0.1
-      Shape:
-        Alpha: 1
-        Axes Length: 0.3
-        Axes Radius: 0.02
-        Color: 255; 25; 0
-        Head Length: 0.07
-        Head Radius: 0.035
-        Shaft Length: 0.23
-        Shaft Radius: 0.015
-        Value: Arrow
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        Filter size: 10
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /odom
-      Value: true
-
-    # ── Sensor data ───────────────────────────────────────────────────────
-
-    - Class: rviz_default_plugins/LaserScan
-      Name: LiDAR Scan
-      Enabled: true
-      Alpha: 1
-      Autocompute Intensity Bounds: true
-      Autocompute Value Bounds:
-        Max Value: 10
-        Min Value: -10
-        Value: true
-      Axis: Z
-      Channel Name: intensity
-      Color: 255; 50; 50
-      Color Transformer: FlatColor
-      Decay Time: 0
-      Max Color: 255; 255; 255
-      Max Intensity: 4096
-      Min Color: 0; 0; 0
-      Min Intensity: 0
-      Position Transformer: XYZ
-      Queue Size: 10
-      Selectable: true
-      Size (Pixels): 3
-      Size (m): 0.05
-      Style: Points
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        Filter size: 10
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /scan
-      Use Fixed Frame: true
-      Use rainbow: true
-      Value: true
-
-    # ── Maps: robot's knowledge vs real world ─────────────────────────────
-
-    - Class: rviz_default_plugins/Map
-      Name: Real Map
-      Enabled: true
-      Alpha: 0.5
-      Color Scheme: costmap
-      Draw Behind: false
-      Topic:
-        Depth: 1
-        Durability Policy: Transient Local
-        Filter size: 10
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /real_map
-      Use Timestamp: false
-      Value: true
-
-    # ── Algorithm outputs ─────────────────────────────────────────────────
-
+    # Output of the human_detection algorithm (separate from ground truth)
     - Class: rviz_default_plugins/MarkerArray
       Name: Detected Humans
       Enabled: true
@@ -268,17 +159,81 @@ Visualization Manager:
         Value: /detected_humans
       Value: true
 
+    # ─────────────────────────────  SENSORS  ────────────────────────────────
+    - Class: rviz_default_plugins/LaserScan
+      Name: LiDAR Scan
+      Enabled: true
+      Alpha: 1.0
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Color: 255; 80; 80
+      Color Transformer: FlatColor
+      Decay Time: 0.0
+      Max Color: 255; 255; 255
+      Max Intensity: 4096
+      Min Color: 0; 0; 0
+      Min Intensity: 0
+      Position Transformer: XYZ
+      Queue Size: 10
+      Selectable: true
+      Size (Pixels): 4
+      Size (m): 0.06
+      Style: Points
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /scan
+      Use Fixed Frame: true
+      Use rainbow: false
+      Value: true
+
+    # ───────────────────────────  NAVIGATION  ───────────────────────────────
+    - Class: rviz_default_plugins/Path
+      Name: Robot Trail
+      Alpha: 1.0
+      Buffer Length: 1
+      Color: 50; 230; 50
+      Enabled: true
+      Head Diameter: 0.2
+      Head Length: 0.1
+      Length: 0.2
+      Line Style: Lines
+      Line Width: 0.05
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0.01
+      Pose Color: 50; 230; 50
+      Pose Style: None
+      Radius: 0.02
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /visualization/robot_trail
+      Value: true
+
     - Class: rviz_default_plugins/Path
       Name: Planned Path
-      Alpha: 1
+      Alpha: 1.0
       Buffer Length: 1
-      Color: 0; 170; 255
+      Color: 0; 180; 255
       Enabled: true
-      Head Diameter: 0.3
-      Head Length: 0.2
-      Length: 0.3
+      Head Diameter: 0.25
+      Head Length: 0.15
+      Length: 0.25
       Line Style: Lines
-      Line Width: 0.06
+      Line Width: 0.07
       Offset:
         X: 0
         Y: 0
@@ -286,8 +241,8 @@ Visualization Manager:
       Pose Color: 255; 255; 0
       Pose Style: Arrows
       Radius: 0.03
-      Shaft Diameter: 0.1
-      Shaft Length: 0.1
+      Shaft Diameter: 0.08
+      Shaft Length: 0.08
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -297,17 +252,15 @@ Visualization Manager:
         Value: /planned_path
       Value: true
 
-    # ── Actual path taken by robot (path_evaluator_node) ──────────────────
-
     - Class: rviz_default_plugins/Path
       Name: Actual Path
-      Alpha: 1
+      Alpha: 0.85
       Buffer Length: 1
       Color: 244; 67; 54
       Enabled: true
-      Head Diameter: 0.2
-      Head Length: 0.1
-      Length: 0.2
+      Head Diameter: 0.15
+      Head Length: 0.08
+      Length: 0.15
       Line Style: Lines
       Line Width: 0.04
       Offset:
@@ -317,8 +270,6 @@ Visualization Manager:
       Pose Color: 255; 152; 0
       Pose Style: None
       Radius: 0.02
-      Shaft Diameter: 0.08
-      Shaft Length: 0.08
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -330,7 +281,7 @@ Visualization Manager:
 
   Enabled: true
   Global Options:
-    Background Color: 30; 30; 30
+    Background Color: 18; 18; 28
     Fixed Frame: odom
     Frame Rate: 30
 
@@ -369,21 +320,21 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.01
-      Scale: 28
+      Scale: 35
       Target Frame: odom
       Value: TopDownOrtho (rviz_default_plugins)
-      X: 0
+      X: 7
       Y: 0
     Saved: ~
 
 Window Geometry:
   Displays:
     collapsed: false
-  Height: 900
+  Height: 960
   Hide Left Dock: false
   Hide Right Dock: true
   Views:
     collapsed: false
-  Width: 1400
+  Width: 1520
   X: 50
-  Y: 50
+  Y: 30

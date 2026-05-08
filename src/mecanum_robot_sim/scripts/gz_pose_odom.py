@@ -30,8 +30,8 @@ class GzPoseOdom(Node):
         super().__init__('gz_pose_odom')
 
         # Spawn offsets (world → odom frame)
-        self.declare_parameter('spawn_x', -7.0)
-        self.declare_parameter('spawn_y',  4.0)
+        self.declare_parameter('spawn_x', -8.0)
+        self.declare_parameter('spawn_y',  0.0)
         self._ox = self.get_parameter('spawn_x').value
         self._oy = self.get_parameter('spawn_y').value
 

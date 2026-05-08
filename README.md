@@ -70,24 +70,46 @@ source ~/.bashrc
 
 ## Running the Simulation
 
-### Launch everything
+### Launch everything (default world)
 
 ```bash
 ros2 launch mecanum_robot_sim spawn_mecanum.launch.py
 ```
 
-Gazebo and RViz open together. Two humans walk across the world. The robot spawns at world (−7, 4) after ~8 seconds.
+Gazebo and RViz open together. The robot spawns at world (−8, 0) after ~8 seconds. Humans (if present in the world) start walking after a 1 s delay.
+
+### Choose a world
+
+Nine worlds ship out of the box — pass the `world` argument to switch:
+
+```bash
+ros2 launch mecanum_robot_sim spawn_mecanum.launch.py world:=world3_cross_opposite
+```
+
+| World | Walls | Obstacles | Humans | Notes |
+|---|---|---|---|---|
+| `crossing_humans` *(default)* | 4 | 3 | 2 | Two humans cross at centre, three static boxes |
+| `world1_static_large` | 4 | 1 | 0 | Single 6×6 m block in the centre |
+| `world2_static_two` | 4 | 2 | 0 | Two long walls forming a chicane |
+| `world3_cross_opposite` | 4 | 0 | 2 | Two humans walking perpendicular, opposite directions |
+| `world4_cross_same` | 4 | 0 | 2 | Two humans walking perpendicular, same direction |
+| `world5_human_oncoming` | 4 | 0 | 2 | One oncoming human + one perpendicular |
+| `world6_human_ahead` | 4 | 0 | 1 | Single human directly in robot's path |
+| `world7_crowd_vertical` | 4 | 0 | 5 | Vertical crowd of five humans |
+| `world8_humans_crossing` | 4 | 0 | 2 | Two humans crossing |
 
 ### Launch arguments
 
 | Argument | Default | Description |
 |----------|---------|-------------|
+| `world` | `crossing_humans` | World SDF stem under `worlds/` |
 | `rviz` | `true` | Open RViz2 |
 | `test_path` | `false` | Use a built-in test path instead of `path_planning_node` |
 | `path` | `scurve` | Test path to use (see table below) |
 | `evaluate` | `false` | Save a tracking-error PNG when goal is reached |
-| `spawn_x` | `-7.0` | Robot spawn x in world frame |
-| `spawn_y` | `4.0` | Robot spawn y in world frame |
+| `spawn_x` | `-8.0` | Robot spawn x in world frame |
+| `spawn_y` | `0.0` | Robot spawn y in world frame |
+| `time_scale` | `1.0` | Scale factor applied to the *kinematic-model controller* only — useful for debugging marker drift; for normal use, edit waypoint speeds via `scale_human_speed` instead |
 
 ### Test paths (bypass path_planning)
 
@@ -97,11 +119,11 @@ ros2 launch mecanum_robot_sim spawn_mecanum.launch.py test_path:=true path:=utur
 
 | Name | Tests |
 |------|-------|
-| `scurve` | Straight + curves + proximity slowdown near obstacle A (default) |
+| `scurve` | Straight + curves + proximity slowdown (default) |
 | `straight` | Pure straight line — baseline speed and heading |
 | `uturn` | Rectangular U-turn — curvature regulation |
 | `diagonal` | 45° diagonal — mecanum lateral correction (`k_lat`) |
-| `slalom` | Weave between obstacles B & C — combined curvature + lateral |
+| `slalom` | Weave between obstacles — combined curvature + lateral |
 | `loop` | Full rectangular circuit — checks heading drift |
 
 ### Teleoperation
@@ -113,34 +135,71 @@ ros2 run teleop_twist_keyboard teleop_twist_keyboard \
 
 ---
 
+## Adjusting Human Walking Speed
+
+Each human follows a list of `<waypoint><time>` entries in the world SDF. Both the visible animated `<actor>` and the invisible kinematic `<model>` (which drives `/gz_dynamic_poses`) read the same waypoint table, so a single edit changes the speed everywhere.
+
+The `scale_human_speed` tool inspects and rewrites those times in place:
+
+```bash
+# Show current pace (m/s) for every human in every world
+ros2 run mecanum_robot_sim scale_human_speed --show --world ALL
+
+# Set a specific human to an exact speed in m/s
+ros2 run mecanum_robot_sim scale_human_speed \
+    --world crossing_humans --human human_1 --target-mps 0.8
+
+# Multiplier instead of absolute speed (×1.5 = 50% faster)
+ros2 run mecanum_robot_sim scale_human_speed \
+    --world world7_crowd_vertical --human human_3 --speed 1.5
+
+# Slow every human in every world to 80%
+ros2 run mecanum_robot_sim scale_human_speed --world ALL --speed 0.8
+```
+
+Re-launch Gazebo after editing speeds. Round-trip is safe: scaling by 0.5 then 2.0 returns to the original timing. Per-human edits don't touch siblings.
+
+---
+
 ## Architecture
 
 ```
-Ignition Gazebo
-  │
-  ├─ VelocityControl plugin ◄────── /cmd_vel_gz  (Twist)
-  ├─ ground-truth pose ───────────► /gz_dynamic_poses
-  ├─ /lidar ──────────────────────► /scan          (LaserScan)
-  ├─ /front_camera ───────────────► /front_camera/image_raw
-  └─ /imu_raw ────────────────────► /imu
-
-gz_pose_odom ──────────────────────► /odom  +  odom→base_link TF
+                ┌────────────────────────── Ignition Gazebo ──────────────────────────┐
+                │                                                                     │
+  /cmd_vel_gz ─►│ VelocityControl ─► robot motion                                     │
+                │                                                                     │
+                │ kinematic <model name="human_*">  ◄── /world/<w>/set_pose service   │
+                │       └─ pose published to       ─► dynamic_pose/info               │
+                │                                                                     │
+                │ visible <actor name="human_*_anim"> (mesh + walk cycle)             │
+                │                                                                     │
+                │ /lidar  ─►   /front_camera/image_raw  ─►   /imu_raw  ─►             │
+                └─────────────────────────────────────────────────────────────────────┘
+                       ▲                          │                       │
+                       │                          ▼                       ▼
+            human_controller             /gz_dynamic_poses             /scan etc.
+            (set_pose @ 20 Hz)                  │
+                       │                        ├──► gz_pose_odom ─► /odom + TF
+                       │                        │
+                       │                        └──► human_marker_publisher
+                       │                                    │
+                       │                                    ▼
+                       │                       /visualization/world (RViz markers)
+                       │
+                       └─ reads SDF waypoints + sim time, drives every kinematic human
 
   ┌──────────────────┐  /detected_human_poses  ┌──────────────────────┐
   │ human_detection  │ ───────────────────────► │   path_planning      │
   │  [IMPLEMENT]     │ ◄── /scan                │   [IMPLEMENT]        │
-  │                  │ ◄── /front_camera/...     │                      │
-  └──────────────────┘                          │ ◄── /odom            │
-                                                │ ◄── /goal_pose       │
-                                                │ ──► /planned_path ─┐ │
-                                                │ ──► /real_map      │ │
-                                                └────────────────────┘ │
-                                                                        │
-  ┌─────────────────────────────────────────────────────────────────┐  │
-  │  pure_pursuit  (Regulated Pure Pursuit — COMPLETE)               │  │
-  │   ◄── /planned_path ◄──────────────────────────────────────────┘  │
+  │                  │ ◄── /front_camera/…       │   ◄── /odom         │
+  └──────────────────┘                          │   ◄── /goal_pose    │
+                                                │   ──► /planned_path │
+                                                └──────┬──────────────┘
+                                                       │
+  ┌─────────────────────────────────────────────────────▼─────────────┐
+  │  pure_pursuit  (Regulated Pure Pursuit — COMPLETE)                │
+  │   ◄── /planned_path                                                │
   │   ◄── /odom                                                        │
-  │   ◄── /real_map                                                    │
   │   ──► /cmd_vel  (TwistStamped)                                     │
   └─────────────────────────────────────────────────────────────────┘
                 │
@@ -149,6 +208,8 @@ gz_pose_odom ──────────────────────�
                 ▼
           /cmd_vel_gz  ──► Ignition VelocityControl
 ```
+
+**Why kinematic models for humans:** Ignition Fortress does *not* publish `<actor>` poses to any topic, so actors alone can't be used as ground truth. Each human is split in two: a `<static>true</static>` `<model>` (no visual, just collision + a `<plugin filename="__waypoints__">` block carrying the trajectory) gets teleported by `human_controller` via `/world/<w>/set_pose`, which makes its pose appear in `/gz_dynamic_poses`. A sibling `<actor>` named `<name>_anim` shares the same waypoints with `<interpolate_x>false</interpolate_x>`, so Gazebo plays the walk animation at exactly the same pace the controller drives the model — visible mesh and ground-truth pose stay in sync by construction.
 
 ---
 
@@ -160,35 +221,50 @@ gz_pose_odom ──────────────────────�
 | `/front_camera/image_raw` | `sensor_msgs/Image` | Gazebo bridge | `human_detection` |
 | `/imu` | `sensor_msgs/Imu` | Gazebo bridge | *(available)* |
 | `/odom` | `nav_msgs/Odometry` | `gz_pose_odom` | `path_planning`, `pure_pursuit` |
+| `/gz_dynamic_poses` | `tf2_msgs/TFMessage` | Gazebo bridge | `gz_pose_odom`, `human_marker_publisher` |
+| `/world/<w>/set_pose` | `ros_gz_interfaces/srv/SetEntityPose` | bridge → Gazebo | `human_controller` |
 | `/goal_pose` | `geometry_msgs/PoseStamped` | operator | `path_planning` |
 | `/detected_human_poses` | `geometry_msgs/PoseArray` | `human_detection` | `path_planning` |
 | `/detected_humans` | `visualization_msgs/MarkerArray` | `human_detection` | RViz |
+| `/visualization/world` | `visualization_msgs/MarkerArray` | `human_marker_publisher` | RViz |
+| `/visualization/human_paths` | `visualization_msgs/MarkerArray` | `human_marker_publisher` | RViz |
+| `/visualization/robot_trail` | `nav_msgs/Path` | `human_marker_publisher` | RViz |
 | `/planned_path` | `nav_msgs/Path` | `path_planning` | `pure_pursuit` |
 | `/real_map` | `nav_msgs/OccupancyGrid` | `path_planning` | `pure_pursuit`, RViz |
 | `/cmd_vel` | `geometry_msgs/TwistStamped` | `pure_pursuit` | `cmd_vel_relay` |
 
 ---
 
-## World Geometry (odom frame)
+## World Geometry
 
-Robot spawns at world (−7, 4) which becomes odom origin (0, 0).
-Conversion: `odom_x = world_x + 7`,  `odom_y = world_y − 4`
+Every world is a 20 × 20 m arena with 0.2 m thick walls along x = ±10 and y = ±10.
+The robot spawns at world (−8, 0) by default, which becomes the **odom-frame origin (0, 0)** seen by ROS:
 
 ```
-  odom y
-    6 ─── north wall ────────────────────────────────────
-          │                                              │
-          │        obstacle_A (11, 1)  2×2 m            │
-          │              ■                               │
-    0  spawn(0,0)                                        │
-          │                                              │
-          │                     obstacle_C (9, −8) ■    │
-          │  obstacle_B (3, −9) ■                        │
-  −14 ─── south wall ───────────────────────────────────
-       −3                                              17  → odom x
+odom_x = world_x − spawn_x   (= world_x + 8 by default)
+odom_y = world_y − spawn_y   (= world_y − 0 by default)
 ```
 
-Obstacles are 2×2 m squares. With `robot_radius = 0.35 m` inflation, the safe clearance border is **1.35 m** from each obstacle centre edge.
+Reference layout for the **default world** `crossing_humans`:
+
+```
+  world y
+   +10 ─── wall_north ────────────────────────────────────
+          │                                               │
+          │                                               │
+          │      obstacle_A (4, 5)  2×2×2 m  ■           │
+          │                                               │
+          │      human_1 → walks east  along y = +1       │
+    0     spawn (-8, 0)            ─────────►             │
+          │      human_2 ← walks west  along y = -1       │
+          │                                               │
+          │                       obstacle_C (2, -4) ■   │
+          │  obstacle_B (-4, -5) ■                        │
+   -10 ─── wall_south ────────────────────────────────────
+       -10                                               +10  → world x
+```
+
+Each human's collision is a 0.35 m radius × 1.7 m tall cylinder, so the lidar at z ≈ 0.32 m sees them and the robot is physically blocked from passing through. Worlds 3–8 share the same wall + spawn layout but vary the obstacles and human trajectories — see the *Choose a world* table above.
 
 ---
 
@@ -344,15 +420,25 @@ mobile_project/
     │   ├── urdf/
     │   │   └── mecanum_robot.urdf.xacro   Robot + sensors + VelocityControl plugin
     │   ├── worlds/
-    │   │   └── crossing_humans.sdf        Gazebo world with walking humans
+    │   │   ├── crossing_humans.sdf        Default world (3 obstacles, 2 humans)
+    │   │   ├── world1_static_large.sdf    1 large obstacle, no humans
+    │   │   ├── world2_static_two.sdf      2 walls forming a chicane, no humans
+    │   │   ├── world3_cross_opposite.sdf  2 humans crossing opposite
+    │   │   ├── world4_cross_same.sdf      2 humans crossing same direction
+    │   │   ├── world5_human_oncoming.sdf  oncoming + perpendicular
+    │   │   ├── world6_human_ahead.sdf     1 human directly in path
+    │   │   ├── world7_crowd_vertical.sdf  crowd of 5 humans
+    │   │   └── world8_humans_crossing.sdf 2 humans crossing
     │   ├── config/
     │   │   └── robot_viz.rviz             RViz config
     │   ├── launch/
-    │   │   └── spawn_mecanum.launch.py    Main launch file
+    │   │   └── spawn_mecanum.launch.py    Main launch file (also bridges set_pose)
     │   └── scripts/
     │       ├── gz_pose_odom.py            Gazebo ground-truth → /odom + TF
     │       ├── cmd_vel_relay.py           TwistStamped→Twist, fixes y-axis flip
-    │       └── human_marker_publisher.py  Analytic human markers for RViz
+    │       ├── human_controller.py        Drives every kinematic human via set_pose
+    │       ├── human_marker_publisher.py  RViz markers for walls/obstacles/humans
+    │       └── scale_human_speed.py       CLI: inspect & rescale human walking speed
     │
     ├── human_detection/            ← IMPLEMENT HERE
     │   └── human_detection/
@@ -374,16 +460,22 @@ mobile_project/
 ## Troubleshooting
 
 **Robot does not appear in RViz immediately**
-> Normal — the robot spawns in Gazebo after ~8 s. RViz will show it as soon as `gz_pose_odom` receives the first ground-truth pose from Gazebo.
+> Normal — the robot spawns in Gazebo after ~8 s. RViz shows it as soon as `gz_pose_odom` receives the first ground-truth pose from Gazebo.
 
 **Robot moves wrong direction laterally**
 > `cmd_vel_relay.py` negates `linear.y` to correct VelocityControl's y-axis flip. If the robot strafes backwards, this is already handled.
 
-**Human poses not visible in RViz**
-> Ignition actors are not in `dynamic_pose/info`. `human_marker_publisher` computes positions analytically from `/clock` + SDF waypoints. Check the `/human_markers` topic.
+**Humans not appearing in RViz / not moving**
+> Check `ros2 topic echo /gz_dynamic_poses --once | grep child_frame_id | grep human` — you should see `human_1`, `human_2`, … If absent, `human_controller` isn't successfully calling `set_pose`. Verify the `set_pose_bridge` node is running: `ros2 node list | grep set_pose`. The bridge needs Gazebo's world to be fully loaded before it connects.
+
+**Visible actor and RViz marker drift apart**
+> Both must read the same waypoint timing. Check that the `<actor>` has `<interpolate_x>false</interpolate_x>` (waypoint-time pacing, not animation-driven) and that you haven't set `time_scale` to anything other than `1.0`. To change human speed cleanly, use `ros2 run mecanum_robot_sim scale_human_speed` instead of `time_scale`.
+
+**Robot drives through humans**
+> Each kinematic human has a 0.35 m × 1.7 m collision cylinder, but if your `path_planning_node` ignores obstacles in `/scan` it will plan straight through. Confirm with `ros2 topic echo /scan` that points show up at human positions.
 
 **Sensor topics empty**
-> The `<plugin filename="libignition-gazebo-sensors-system.so">` block must be present in `crossing_humans.sdf`. Requires the `ogre2` render engine.
+> The `<plugin filename="libignition-gazebo-sensors-system.so">` block must be present in the world SDF. Requires the `ogre2` render engine.
 
 **Build errors after editing**
 ```bash

@@ -17,5 +17,9 @@ install(PROGRAMS scripts/kinematic_odom.py
   DESTINATION lib/${PROJECT_NAME} RENAME kinematic_odom)
 install(PROGRAMS scripts/gz_pose_odom.py
   DESTINATION lib/${PROJECT_NAME} RENAME gz_pose_odom)
+install(PROGRAMS scripts/human_controller.py
+  DESTINATION lib/${PROJECT_NAME} RENAME human_controller)
+install(PROGRAMS scripts/scale_human_speed.py
+  DESTINATION lib/${PROJECT_NAME} RENAME scale_human_speed)
 
 ament_package()
