@@ -35,6 +35,7 @@ from std_msgs.msg import Header
 from nav_msgs.msg import Odometry
 from std_msgs.msg import ColorRGBA
 from geometry_msgs.msg import Quaternion
+from nav_msgs.msg import OccupancyGrid
 
 import math
 import cv2
@@ -68,6 +69,7 @@ class HumanDetectionNode(Node):
         # ----------------- Publishers -----------------
         self.marker_pub = self.create_publisher(MarkerArray, '/detected_humans', 10)
         self.pose_pub = self.create_publisher(PoseArray, '/detected_human_poses', 10)
+        self.costmap_pub = self.create_publisher(OccupancyGrid, '/dynamic_local_costmap', 10)
 
         # ---------------------------------------------------
 
@@ -236,6 +238,12 @@ class HumanDetectionNode(Node):
 
         except Exception as e:
             self.get_logger().error(f'Detection Error: {e}')
+
+    def pub_costmap(self):
+
+        msg = OccupancyGrid()
+
+        pass
 
     def _get_human_world_pose(self, u_pixel, v_pixel, distance_m):
         """
@@ -461,6 +469,7 @@ class HumanDetectionNode(Node):
             marker.points.append(get_asymmetric_point(theta2))
 
         return marker
+    
 def main(args=None):
     rclpy.init(args=args)
     node = HumanDetectionNode()
