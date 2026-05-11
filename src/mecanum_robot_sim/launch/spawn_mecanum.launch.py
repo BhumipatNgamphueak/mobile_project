@@ -25,8 +25,8 @@ def generate_launch_description():
 
     # ── Arguments ────────────────────────────────────────────────────────
     world_arg   = DeclareLaunchArgument('world',   default_value='crossing_humans')
-    spawn_x_arg = DeclareLaunchArgument('spawn_x', default_value='-8.0')
-    spawn_y_arg = DeclareLaunchArgument('spawn_y', default_value=' 0.0')
+    spawn_x_arg = DeclareLaunchArgument('spawn_x', default_value='-7.0')
+    spawn_y_arg = DeclareLaunchArgument('spawn_y', default_value=' 4.0')
     spawn_z_arg = DeclareLaunchArgument('spawn_z', default_value='0.0')
     rviz_arg      = DeclareLaunchArgument('rviz',      default_value='true',
                                           description='Launch RViz2')
@@ -36,8 +36,6 @@ def generate_launch_description():
                                           description='Test path name: scurve|straight|uturn|diagonal|slalom|loop')
     evaluate_arg  = DeclareLaunchArgument('evaluate',  default_value='false',
                                           description='Run path evaluator (saves PNG plot)')
-    time_scale_arg = DeclareLaunchArgument('time_scale', default_value='1.0',
-                                           description='Scale factor for human SDF-trajectory playback (<1 slower, >1 faster)')
 
     # ── Gazebo world ──────────────────────────────────────────────────────
     gz_args = PythonExpression(
@@ -146,24 +144,16 @@ def generate_launch_description():
 
     # Dynamic pose: Ignition world poses → /gz_dynamic_poses (TFMessage)
     # Used by gz_pose_odom to get ground-truth robot position.
-    # Topic includes the world name, so build it dynamically from the 'world' argument.
     dynamic_pose_bridge = Node(
         package='ros_gz_bridge',
         executable='parameter_bridge',
         name='dynamic_pose_bridge',
         arguments=[
-            PythonExpression([
-                "'/world/",
-                LaunchConfiguration('world'),
-                "/dynamic_pose/info@tf2_msgs/msg/TFMessage[ignition.msgs.Pose_V'",
-            ]),
+            '/world/crossing_humans/dynamic_pose/info'
+            '@tf2_msgs/msg/TFMessage[ignition.msgs.Pose_V',
         ],
         remappings=[
-            (PythonExpression([
-                "'/world/",
-                LaunchConfiguration('world'),
-                "/dynamic_pose/info'",
-            ]), '/gz_dynamic_poses'),
+            ('/world/crossing_humans/dynamic_pose/info', '/gz_dynamic_poses'),
         ],
         output='screen',
     )
@@ -203,41 +193,6 @@ def generate_launch_description():
         }],
     )
 
-    # ── Service bridge: Ignition /world/<w>/set_pose → ROS service ────────
-    # Lets human_controller call set_pose via rclpy instead of spawning
-    # `ign service` subprocesses (which generated Host-unreachable log spam
-    # because the CLI helper exited before Gazebo's response landed).
-    set_pose_bridge = Node(
-        package='ros_gz_bridge',
-        executable='parameter_bridge',
-        name='set_pose_bridge',
-        arguments=[
-            PythonExpression([
-                "'/world/",
-                LaunchConfiguration('world'),
-                "/set_pose@ros_gz_interfaces/srv/SetEntityPose'",
-            ]),
-        ],
-        output='screen',
-    )
-
-    # ── Human controller ──────────────────────────────────────────────────
-    # Drives the kinematic human models in the world along their SDF
-    # waypoints via /world/<w>/set_pose.  This causes their pose to appear
-    # in /gz_dynamic_poses, which the marker publisher then renders as
-    # ground truth — no SDF interpolation guessing.
-    human_controller_node = Node(
-        package='mecanum_robot_sim',
-        executable='human_controller',
-        name='human_controller',
-        output='screen',
-        parameters=[{
-            'world':      ParameterValue(LaunchConfiguration('world'),      value_type=str),
-            'time_scale': ParameterValue(LaunchConfiguration('time_scale'), value_type=float),
-            'use_sim_time': True,
-        }],
-    )
-
     # ── Human marker publisher ────────────────────────────────────────────
     human_marker_node = Node(
         package='mecanum_robot_sim',
@@ -245,10 +200,8 @@ def generate_launch_description():
         name='human_marker_publisher',
         output='screen',
         parameters=[{
-            'spawn_x':    LaunchConfiguration('spawn_x'),
-            'spawn_y':    LaunchConfiguration('spawn_y'),
-            'world':      ParameterValue(LaunchConfiguration('world'),      value_type=str),
-            'time_scale': ParameterValue(LaunchConfiguration('time_scale'), value_type=float),
+            'spawn_x': LaunchConfiguration('spawn_x'),
+            'spawn_y': LaunchConfiguration('spawn_y'),
             'use_sim_time': True,
         }],
     )
@@ -316,7 +269,7 @@ def generate_launch_description():
 
     return LaunchDescription([
         world_arg, spawn_x_arg, spawn_y_arg, spawn_z_arg,
-        rviz_arg, test_path_arg, path_arg, evaluate_arg, time_scale_arg,
+        rviz_arg, test_path_arg, path_arg, evaluate_arg,
         gz_sim,
         robot_state_publisher,
         joint_state_publisher,
@@ -330,8 +283,6 @@ def generate_launch_description():
         dynamic_pose_bridge,
         cmd_vel_relay,
         gz_pose_odom,
-        set_pose_bridge,
-        human_controller_node,
         human_marker_node,
         human_detection_node,
         path_planning_node,

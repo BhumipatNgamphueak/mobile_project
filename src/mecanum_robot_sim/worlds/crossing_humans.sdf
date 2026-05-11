@@ -3,11 +3,7 @@
   World: crossing_humans.sdf
   - Two humans walk from opposite ends and cross at the centre
   - Three static box obstacles for path-planning / YOLO testing
-  - Humans are kinematic models (cylinder + sphere head) driven by
-    human_controller.py via the /world/<w>/set_pose service.  This makes
-    each human's pose appear in /gz_dynamic_poses — i.e. Gazebo and ROS
-    share the *same* ground-truth pose, unlike <actor> which never
-    publishes its pose to any topic in Ignition Fortress.
+  - All geometry is inline SDF (no Fuel <include>) to avoid actor blinking
 -->
 <sdf version="1.7">
   <world name="crossing_humans">
@@ -23,6 +19,7 @@
       <real_time_factor>1.0</real_time_factor>
     </physics>
 
+    <!-- Required plugins -->
     <plugin filename="libignition-gazebo-physics-system.so"
             name="ignition::gazebo::systems::Physics"/>
     <plugin filename="libignition-gazebo-scene-broadcaster-system.so"
@@ -34,6 +31,7 @@
       <render_engine>ogre2</render_engine>
     </plugin>
 
+    <!-- Sun -->
     <light name="sun" type="directional">
       <cast_shadows>true</cast_shadows>
       <pose>0 0 20 0 0 0</pose>
@@ -45,7 +43,7 @@
     </light>
 
     <!-- ═══════════════════════════════════════════════════
-         GROUND PLANE
+         GROUND PLANE  (20 × 20 m, grey tiles)
     ═══════════════════════════════════════════════════ -->
     <model name="ground_plane">
       <static>true</static>
@@ -65,242 +63,173 @@
     </model>
 
     <!-- ═══════════════════════════════════════════════════
-         BOUNDARY WALLS
+         BOUNDARY WALLS  (outline of the navigable area)
     ═══════════════════════════════════════════════════ -->
+    <!-- North wall -->
     <model name="wall_north">
-      <static>true</static><pose>0 10 1 0 0 0</pose>
+      <static>true</static>
+      <pose>0 10 1 0 0 0</pose>
       <link name="link">
         <collision name="col"><geometry><box><size>20 0.2 2</size></box></geometry></collision>
-        <visual name="vis"><geometry><box><size>20 0.2 2</size></box></geometry>
-          <material><ambient>0.4 0.4 0.4 1</ambient><diffuse>0.4 0.4 0.4 1</diffuse></material></visual>
+        <visual name="vis">
+          <geometry><box><size>20 0.2 2</size></box></geometry>
+          <material><ambient>0.4 0.4 0.4 1</ambient><diffuse>0.4 0.4 0.4 1</diffuse></material>
+        </visual>
       </link>
     </model>
+    <!-- South wall -->
     <model name="wall_south">
-      <static>true</static><pose>0 -10 1 0 0 0</pose>
+      <static>true</static>
+      <pose>0 -10 1 0 0 0</pose>
       <link name="link">
         <collision name="col"><geometry><box><size>20 0.2 2</size></box></geometry></collision>
-        <visual name="vis"><geometry><box><size>20 0.2 2</size></box></geometry>
-          <material><ambient>0.4 0.4 0.4 1</ambient><diffuse>0.4 0.4 0.4 1</diffuse></material></visual>
+        <visual name="vis">
+          <geometry><box><size>20 0.2 2</size></box></geometry>
+          <material><ambient>0.4 0.4 0.4 1</ambient><diffuse>0.4 0.4 0.4 1</diffuse></material>
+        </visual>
       </link>
     </model>
+    <!-- East wall -->
     <model name="wall_east">
-      <static>true</static><pose>10 0 1 0 0 0</pose>
+      <static>true</static>
+      <pose>10 0 1 0 0 0</pose>
       <link name="link">
         <collision name="col"><geometry><box><size>0.2 20 2</size></box></geometry></collision>
-        <visual name="vis"><geometry><box><size>0.2 20 2</size></box></geometry>
-          <material><ambient>0.4 0.4 0.4 1</ambient><diffuse>0.4 0.4 0.4 1</diffuse></material></visual>
+        <visual name="vis">
+          <geometry><box><size>0.2 20 2</size></box></geometry>
+          <material><ambient>0.4 0.4 0.4 1</ambient><diffuse>0.4 0.4 0.4 1</diffuse></material>
+        </visual>
       </link>
     </model>
+    <!-- West wall -->
     <model name="wall_west">
-      <static>true</static><pose>-10 0 1 0 0 0</pose>
+      <static>true</static>
+      <pose>-10 0 1 0 0 0</pose>
       <link name="link">
         <collision name="col"><geometry><box><size>0.2 20 2</size></box></geometry></collision>
-        <visual name="vis"><geometry><box><size>0.2 20 2</size></box></geometry>
-          <material><ambient>0.4 0.4 0.4 1</ambient><diffuse>0.4 0.4 0.4 1</diffuse></material></visual>
+        <visual name="vis">
+          <geometry><box><size>0.2 20 2</size></box></geometry>
+          <material><ambient>0.4 0.4 0.4 1</ambient><diffuse>0.4 0.4 0.4 1</diffuse></material>
+        </visual>
       </link>
     </model>
 
     <!-- ═══════════════════════════════════════════════════
-         STATIC OBSTACLES
+         STATIC OBSTACLES  (2 × 2 × 2 m boxes)
+         Placed off the human crossing paths so the robot
+         must navigate around them.
     ═══════════════════════════════════════════════════ -->
+    <!-- Obstacle A – north-east quadrant -->
     <model name="obstacle_A">
       <static>true</static>
       <pose>4 5 1 0 0 0</pose>
       <link name="link">
         <collision name="col"><geometry><box><size>2 2 2</size></box></geometry></collision>
-        <visual name="vis"><geometry><box><size>2 2 2</size></box></geometry>
-          <material><ambient>0.8 0.2 0.2 1</ambient><diffuse>0.8 0.2 0.2 1</diffuse></material></visual>
+        <visual name="vis">
+          <geometry><box><size>2 2 2</size></box></geometry>
+          <material>
+            <ambient>0.8 0.2 0.2 1</ambient>
+            <diffuse>0.8 0.2 0.2 1</diffuse>
+          </material>
+        </visual>
       </link>
     </model>
+
+    <!-- Obstacle B – south-west quadrant -->
     <model name="obstacle_B">
       <static>true</static>
       <pose>-4 -5 1 0 0 0</pose>
       <link name="link">
         <collision name="col"><geometry><box><size>2 2 2</size></box></geometry></collision>
-        <visual name="vis"><geometry><box><size>2 2 2</size></box></geometry>
-          <material><ambient>0.2 0.5 0.8 1</ambient><diffuse>0.2 0.5 0.8 1</diffuse></material></visual>
+        <visual name="vis">
+          <geometry><box><size>2 2 2</size></box></geometry>
+          <material>
+            <ambient>0.2 0.5 0.8 1</ambient>
+            <diffuse>0.2 0.5 0.8 1</diffuse>
+          </material>
+        </visual>
       </link>
     </model>
+
+    <!-- Obstacle C – near centre, offset from crossing path -->
     <model name="obstacle_C">
       <static>true</static>
       <pose>2 -4 1 0 0 0</pose>
       <link name="link">
         <collision name="col"><geometry><box><size>2 2 2</size></box></geometry></collision>
-        <visual name="vis"><geometry><box><size>2 2 2</size></box></geometry>
-          <material><ambient>0.2 0.8 0.3 1</ambient><diffuse>0.2 0.8 0.3 1</diffuse></material></visual>
+        <visual name="vis">
+          <geometry><box><size>2 2 2</size></box></geometry>
+          <material>
+            <ambient>0.2 0.8 0.3 1</ambient>
+            <diffuse>0.2 0.8 0.3 1</diffuse>
+          </material>
+        </visual>
       </link>
     </model>
 
     <!-- ═══════════════════════════════════════════════════
-         HUMAN 1 — kinematic model, driven by human_controller.py
-         Cylindrical body (orange) + sphere head, gravity disabled.
-         Waypoints embedded in <plugin name="waypoints"> below
-         (Gazebo logs a warning for the unknown filename and
-         skips the plugin; our SDF parser reads the waypoint data).
+         HUMAN 1 – walks EAST  (left → right)
+         Path: (-8, 1.0) ──────────────→ (8, 1.0)
+               speed ~1.2 m/s → 16 m ≈ 13.3 s
+         Crosses the centre at t ≈ 6.7 s
     ═══════════════════════════════════════════════════ -->
-    <model name="human_1">
-      <pose>-8 1 0 0 0 0</pose>
-      <static>true</static>
-      <link name="body">
-        <!-- Same mesh the original <actor> used; rendered statically (no
-             skeletal animation, but full human silhouette). -->
-        <collision name="col">
-          <pose>0 0 0.85 0 0 0</pose>
-          <geometry><cylinder><radius>0.35</radius><length>1.7</length></cylinder></geometry>
-          <surface>
-            <friction>
-              <ode><mu>0.6</mu><mu2>0.6</mu2></ode>
-            </friction>
-            <contact>
-              <ode><kp>1e6</kp><kd>1.0</kd><max_vel>0.5</max_vel></ode>
-            </contact>
-          </surface>
-        </collision>
-      </link>
-      <plugin filename="__waypoints__" name="waypoints">
-        <delay_start>1.0</delay_start>
-        <loop>true</loop>
-        <waypoint><time>0.0000</time><pose>-8.0  1.0 0  0 0  0.00</pose></waypoint>
-        <waypoint><time>2.0050</time><pose>-5.6  1.0 0  0 0  0.00</pose></waypoint>
-        <waypoint><time>4.0100</time><pose>-3.2  1.0 0  0 0  0.00</pose></waypoint>
-        <waypoint><time>6.0150</time><pose>-0.8  1.0 0  0 0  0.00</pose></waypoint>
-        <waypoint><time>8.0201</time><pose> 1.6  1.0 0  0 0  0.00</pose></waypoint>
-        <waypoint><time>10.0251</time><pose> 4.0  1.0 0  0 0  0.00</pose></waypoint>
-        <waypoint><time>12.0301</time><pose> 6.4  1.0 0  0 0  0.00</pose></waypoint>
-        <waypoint><time>13.3333</time><pose> 8.0  1.0 0  0 0  0.00</pose></waypoint>
-        <waypoint><time>14.0852</time><pose> 8.0  1.0 0  0 0  1.5708</pose></waypoint>
-        <waypoint><time>14.8371</time><pose> 8.0  1.0 0  0 0  3.1416</pose></waypoint>
-        <waypoint><time>16.8421</time><pose> 5.6  1.0 0  0 0  3.1416</pose></waypoint>
-        <waypoint><time>18.8471</time><pose> 3.2  1.0 0  0 0  3.1416</pose></waypoint>
-        <waypoint><time>20.8522</time><pose> 0.8  1.0 0  0 0  3.1416</pose></waypoint>
-        <waypoint><time>22.8572</time><pose>-1.6  1.0 0  0 0  3.1416</pose></waypoint>
-        <waypoint><time>24.8622</time><pose>-4.0  1.0 0  0 0  3.1416</pose></waypoint>
-        <waypoint><time>26.8672</time><pose>-6.4  1.0 0  0 0  3.1416</pose></waypoint>
-        <waypoint><time>28.1704</time><pose>-8.0  1.0 0  0 0  3.1416</pose></waypoint>
-        <waypoint><time>28.9223</time><pose>-8.0  1.0 0  0 0  1.5708</pose></waypoint>
-        <waypoint><time>29.6742</time><pose>-8.0  1.0 0  0 0  0.00</pose></waypoint>
-      </plugin>
-    </model>
-
-    <!-- ═══════════════════════════════════════════════════
-         HUMAN 2 — kinematic model (blue/teal)
-    ═══════════════════════════════════════════════════ -->
-    <model name="human_2">
-      <pose>8 -1 0 0 0 3.1416</pose>
-      <static>true</static>
-      <link name="body">
-        <collision name="col">
-          <pose>0 0 0.85 0 0 0</pose>
-          <geometry><cylinder><radius>0.35</radius><length>1.7</length></cylinder></geometry>
-          <surface>
-            <friction>
-              <ode><mu>0.6</mu><mu2>0.6</mu2></ode>
-            </friction>
-            <contact>
-              <ode><kp>1e6</kp><kd>1.0</kd><max_vel>0.5</max_vel></ode>
-            </contact>
-          </surface>
-        </collision>
-      </link>
-      <plugin filename="__waypoints__" name="waypoints">
-        <delay_start>1.0</delay_start>
-        <loop>true</loop>
-        <waypoint><time>0.0000</time><pose> 8.0 -1.0 0  0 0  3.1416</pose></waypoint>
-        <waypoint><time>2.0000</time><pose> 5.6 -1.0 0  0 0  3.1416</pose></waypoint>
-        <waypoint><time>4.0000</time><pose> 3.2 -1.0 0  0 0  3.1416</pose></waypoint>
-        <waypoint><time>6.0000</time><pose> 0.8 -1.0 0  0 0  3.1416</pose></waypoint>
-        <waypoint><time>8.0000</time><pose>-1.6 -1.0 0  0 0  3.1416</pose></waypoint>
-        <waypoint><time>10.0000</time><pose>-4.0 -1.0 0  0 0  3.1416</pose></waypoint>
-        <waypoint><time>12.0000</time><pose>-6.4 -1.0 0  0 0  3.1416</pose></waypoint>
-        <waypoint><time>13.3000</time><pose>-8.0 -1.0 0  0 0  3.1416</pose></waypoint>
-        <waypoint><time>14.0500</time><pose>-8.0 -1.0 0  0 0  1.5708</pose></waypoint>
-        <waypoint><time>14.8000</time><pose>-8.0 -1.0 0  0 0  0.0</pose></waypoint>
-        <waypoint><time>16.8000</time><pose>-5.6 -1.0 0  0 0  0.0</pose></waypoint>
-        <waypoint><time>18.8000</time><pose>-3.2 -1.0 0  0 0  0.0</pose></waypoint>
-        <waypoint><time>20.8000</time><pose>-0.8 -1.0 0  0 0  0.0</pose></waypoint>
-        <waypoint><time>22.8000</time><pose> 1.6 -1.0 0  0 0  0.0</pose></waypoint>
-        <waypoint><time>24.8000</time><pose> 4.0 -1.0 0  0 0  0.0</pose></waypoint>
-        <waypoint><time>26.8000</time><pose> 6.4 -1.0 0  0 0  0.0</pose></waypoint>
-        <waypoint><time>28.1000</time><pose> 8.0 -1.0 0  0 0  0.0</pose></waypoint>
-        <waypoint><time>28.8500</time><pose> 8.0 -1.0 0  0 0  1.5708</pose></waypoint>
-        <waypoint><time>29.6000</time><pose> 8.0 -1.0 0  0 0  3.1416</pose></waypoint>
-      </plugin>
-    </model>
-
-
-    <!-- Visual-only actor; kinematic model "human_1" carries ground-truth pose -->
-    <actor name="human_1_anim">
+    <actor name="human_1">
       <skin>
-        <filename>file:///home/prime/.ignition/fuel/fuel.gazebosim.org/mingfei/models/actor/1/meshes/walk.dae</filename>
+        <filename>/home/prime/.ignition/fuel/fuel.gazebosim.org/mingfei/models/actor/1/meshes/walk.dae</filename>
         <scale>1.0</scale>
       </skin>
       <animation name="walk">
-        <filename>file:///home/prime/.ignition/fuel/fuel.gazebosim.org/mingfei/models/actor/1/meshes/walk.dae</filename>
-        <interpolate_x>false</interpolate_x>
+        <filename>/home/prime/.ignition/fuel/fuel.gazebosim.org/mingfei/models/actor/1/meshes/walk.dae</filename>
+        <interpolate_x>true</interpolate_x>
       </animation>
       <script>
         <loop>true</loop>
         <delay_start>1.0</delay_start>
         <auto_start>true</auto_start>
-        <trajectory id="0" type="walk">
-        <waypoint><time>0.0000</time><pose>-8.0  1.0 1.0  0 0  0.00</pose></waypoint>
-        <waypoint><time>2.0050</time><pose>-5.6  1.0 1.0  0 0  0.00</pose></waypoint>
-        <waypoint><time>4.0100</time><pose>-3.2  1.0 1.0  0 0  0.00</pose></waypoint>
-        <waypoint><time>6.0150</time><pose>-0.8  1.0 1.0  0 0  0.00</pose></waypoint>
-        <waypoint><time>8.0201</time><pose>1.6  1.0 1.0  0 0  0.00</pose></waypoint>
-        <waypoint><time>10.0251</time><pose>4.0  1.0 1.0  0 0  0.00</pose></waypoint>
-        <waypoint><time>12.0301</time><pose>6.4  1.0 1.0  0 0  0.00</pose></waypoint>
-        <waypoint><time>13.3333</time><pose>8.0  1.0 1.0  0 0  0.00</pose></waypoint>
-        <waypoint><time>14.0852</time><pose>8.0  1.0 1.0  0 0  1.5708</pose></waypoint>
-        <waypoint><time>14.8371</time><pose>8.0  1.0 1.0  0 0  3.1416</pose></waypoint>
-        <waypoint><time>16.8421</time><pose>5.6  1.0 1.0  0 0  3.1416</pose></waypoint>
-        <waypoint><time>18.8471</time><pose>3.2  1.0 1.0  0 0  3.1416</pose></waypoint>
-        <waypoint><time>20.8522</time><pose>0.8  1.0 1.0  0 0  3.1416</pose></waypoint>
-        <waypoint><time>22.8572</time><pose>-1.6  1.0 1.0  0 0  3.1416</pose></waypoint>
-        <waypoint><time>24.8622</time><pose>-4.0  1.0 1.0  0 0  3.1416</pose></waypoint>
-        <waypoint><time>26.8672</time><pose>-6.4  1.0 1.0  0 0  3.1416</pose></waypoint>
-        <waypoint><time>28.1704</time><pose>-8.0  1.0 1.0  0 0  3.1416</pose></waypoint>
-        <waypoint><time>28.9223</time><pose>-8.0  1.0 1.0  0 0  1.5708</pose></waypoint>
-        <waypoint><time>29.6742</time><pose>-8.0  1.0 1.0  0 0  0.00</pose></waypoint>
+        <trajectory id="0" type="walk" >
+          <!-- Leg 1: walk east -->
+          <waypoint><time>0.0</time> <pose>-8  1.0 1.0 0 0  0.0</pose></waypoint>
+          <waypoint><time>13.3</time><pose> 8  1.0 1.0 0 0  0.0</pose></waypoint>
+          <!-- Pause & turn at east end -->
+          <waypoint><time>14.3</time><pose> 8  1.0 1.0 0 0  3.1416</pose></waypoint>
+          <!-- Leg 2: walk west (return) -->
+          <waypoint><time>27.6</time><pose>-8  1.0 1.0 0 0  3.1416</pose></waypoint>
+          <!-- Pause & turn at west end (close loop) -->
+          <waypoint><time>28.6</time><pose>-8  1.0 1.0 0 0  0.0</pose></waypoint>
         </trajectory>
       </script>
     </actor>
 
-
-    <!-- Visual-only actor; kinematic model "human_2" carries ground-truth pose -->
-    <actor name="human_2_anim">
+    <!-- ═══════════════════════════════════════════════════
+         HUMAN 2 – walks WEST  (right → left)
+         Path: (8, -1.0) ──────────────→ (-8, -1.0)
+               Same speed, slightly offset Y so they pass
+               close to each other without overlapping.
+         Crosses the centre at t ≈ 6.7 s  ← same as Human 1
+    ═══════════════════════════════════════════════════ -->
+    <actor name="human_2">
       <skin>
-        <filename>file:///home/prime/.ignition/fuel/fuel.gazebosim.org/mingfei/models/actor/1/meshes/walk.dae</filename>
+        <filename>/home/prime/.ignition/fuel/fuel.gazebosim.org/mingfei/models/actor/1/meshes/walk.dae</filename>
         <scale>1.0</scale>
       </skin>
       <animation name="walk">
-        <filename>file:///home/prime/.ignition/fuel/fuel.gazebosim.org/mingfei/models/actor/1/meshes/walk.dae</filename>
-        <interpolate_x>false</interpolate_x>
+        <filename>/home/prime/.ignition/fuel/fuel.gazebosim.org/mingfei/models/actor/1/meshes/walk.dae</filename>
+        <interpolate_x>true</interpolate_x>
       </animation>
       <script>
         <loop>true</loop>
         <delay_start>1.0</delay_start>
         <auto_start>true</auto_start>
-        <trajectory id="0" type="walk">
-        <waypoint><time>0.0000</time><pose>8.0 -1.0 1.0  0 0  3.1416</pose></waypoint>
-        <waypoint><time>2.0000</time><pose>5.6 -1.0 1.0  0 0  3.1416</pose></waypoint>
-        <waypoint><time>4.0000</time><pose>3.2 -1.0 1.0  0 0  3.1416</pose></waypoint>
-        <waypoint><time>6.0000</time><pose>0.8 -1.0 1.0  0 0  3.1416</pose></waypoint>
-        <waypoint><time>8.0000</time><pose>-1.6 -1.0 1.0  0 0  3.1416</pose></waypoint>
-        <waypoint><time>10.0000</time><pose>-4.0 -1.0 1.0  0 0  3.1416</pose></waypoint>
-        <waypoint><time>12.0000</time><pose>-6.4 -1.0 1.0  0 0  3.1416</pose></waypoint>
-        <waypoint><time>13.3000</time><pose>-8.0 -1.0 1.0  0 0  3.1416</pose></waypoint>
-        <waypoint><time>14.0500</time><pose>-8.0 -1.0 1.0  0 0  1.5708</pose></waypoint>
-        <waypoint><time>14.8000</time><pose>-8.0 -1.0 1.0  0 0  0.0</pose></waypoint>
-        <waypoint><time>16.8000</time><pose>-5.6 -1.0 1.0  0 0  0.0</pose></waypoint>
-        <waypoint><time>18.8000</time><pose>-3.2 -1.0 1.0  0 0  0.0</pose></waypoint>
-        <waypoint><time>20.8000</time><pose>-0.8 -1.0 1.0  0 0  0.0</pose></waypoint>
-        <waypoint><time>22.8000</time><pose>1.6 -1.0 1.0  0 0  0.0</pose></waypoint>
-        <waypoint><time>24.8000</time><pose>4.0 -1.0 1.0  0 0  0.0</pose></waypoint>
-        <waypoint><time>26.8000</time><pose>6.4 -1.0 1.0  0 0  0.0</pose></waypoint>
-        <waypoint><time>28.1000</time><pose>8.0 -1.0 1.0  0 0  0.0</pose></waypoint>
-        <waypoint><time>28.8500</time><pose>8.0 -1.0 1.0  0 0  1.5708</pose></waypoint>
-        <waypoint><time>29.6000</time><pose>8.0 -1.0 1.0  0 0  3.1416</pose></waypoint>
+        <trajectory id="0" type="walk" >
+          <!-- Leg 1: walk west -->
+          <waypoint><time>0.0</time> <pose> 8 -1.0 1.0 0 0  3.1416</pose></waypoint>
+          <waypoint><time>13.3</time><pose>-8 -1.0 1.0 0 0  3.1416</pose></waypoint>
+          <!-- Pause & turn at west end -->
+          <waypoint><time>14.3</time><pose>-8 -1.0 1.0 0 0  0.0</pose></waypoint>
+          <!-- Leg 2: walk east (return) -->
+          <waypoint><time>27.6</time><pose> 8 -1.0 1.0 0 0  0.0</pose></waypoint>
+          <!-- Pause & turn at east end (close loop) -->
+          <waypoint><time>28.6</time><pose> 8 -1.0 1.0 0 0  3.1416</pose></waypoint>
         </trajectory>
       </script>
     </actor>

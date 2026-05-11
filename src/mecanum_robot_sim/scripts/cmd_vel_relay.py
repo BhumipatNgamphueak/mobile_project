@@ -21,12 +21,12 @@ class CmdVelRelay(Node):
         self.get_logger().info('cmd_vel_relay ready')
 
     def _cb(self, msg: TwistStamped):
-        # VelocityControl applies body-frame y opposite to ROS convention —
-        # negate lateral velocity so positive vy moves the robot left (north).
+        # VelocityControl maps exactly to the ROS convention (positive vy is left).
+        # We simply pass the velocities through.
         t = msg.twist
         out = Twist()
         out.linear.x  =  t.linear.x
-        out.linear.y  = -t.linear.y
+        out.linear.y  =  t.linear.y
         out.linear.z  =  t.linear.z
         out.angular.x =  t.angular.x
         out.angular.y =  t.angular.y
