@@ -20,7 +20,7 @@ import array
 import cv2
 from cv_bridge import CvBridge
 from ultralytics import YOLO
-import mediapipe as mp
+# import mediapipe as mp
 
 class HumanDetectionNode(Node):
 
@@ -55,8 +55,8 @@ class HumanDetectionNode(Node):
         # ----------------- Publishers -----------------
         self.marker_pub = self.create_publisher(MarkerArray, '/detected_humans', 10)
         self.pose_pub = self.create_publisher(PoseArray, '/detected_human_poses', 10)
-        self.costmap_pub = self.create_publisher(OccupancyGrid, '/dynamic_local_costmap', 10)
-
+        # self.costmap_pub = self.create_publisher(OccupancyGrid, '/dynamic_local_costmap', 10) # 
+        self.costmap_pub = self.create_publisher(OccupancyGrid, '/local_costmap', 10) # 
         # ----------------- Internal state -----------------
         self._latest_scan:  LaserScan | None = None
         self._latest_image: Image     | None = None
@@ -70,13 +70,13 @@ class HumanDetectionNode(Node):
         self.bridge = CvBridge()
         self.human_detect_model = YOLO('yolov8n.pt')
 
-        self.mp_pose = mp.solutions.pose
-        self.pose_detector = self.mp_pose.Pose(
-            static_image_mode=False, 
-            model_complexity=0, 
-            min_detection_confidence=0.5
-        )
-        self.mp_draw = mp.solutions.drawing_utils
+        # self.mp_pose = mp.solutions.pose
+        # self.pose_detector = self.mp_pose.Pose(
+        #     static_image_mode=False, 
+        #     model_complexity=0, 
+        #     min_detection_confidence=0.5
+        # )
+        # self.mp_draw = mp.solutions.drawing_utils
 
         # Dynamic Scale Configurations
         self.human_history = {} 

@@ -13,6 +13,7 @@ setup(
         ('share/' + package_name + '/launch', [
             'launch/costmap_sim.launch.py',
             'launch/teb_direct.launch.py',
+            'launch/teb_human_detection.launch.py'
         ]),
     ],
     install_requires=['setuptools'],
