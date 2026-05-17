@@ -158,19 +158,13 @@ class HumanDetectionNode(Node):
             
             all_markers = MarkerArray()
             now = self.get_clock().now()
+            
+            # เก็บ ID ของคนที่เราตรวจเจอในเฟรมนี้ เพื่อเอาไว้เช็คเคลียร์คนที่หายไปจากกล้อง
+            current_frame_ids = set()
 
             # YOLO results[0].boxes ให้ข้อมูล ID มาด้วย (ถ้าใช้ mode track)
-            # ในที่นี้สมมติ i คือ index ของการตรวจจับ
             for i, r in enumerate(results[0].boxes):
                 x1, y1, x2, y2 = map(int, r.xyxy[0])
-                
-                # --- Orientation & Pose (เหมือนเดิม) ---
-                person_yaw = 0.0
-                person_crop = cv_image[max(0, y1-20):min(h, y2+20), max(0, x1-20):min(w, x2+20)]
-                if person_crop.size > 0:
-                    pose_results = self.pose_detector.process(cv2.cvtColor(person_crop, cv2.COLOR_BGR2RGB))
-                    if pose_results.pose_landmarks:
-                        person_yaw = self._get_orientation(pose_results.pose_landmarks.landmark)
 
                 # --- 3D Position ---
                 u_center = (x1 + x2) / 2
@@ -180,61 +174,79 @@ class HumanDetectionNode(Node):
                 if dist_m > 0:
                     wx, wy = self._get_human_world_pose(u_center, v_center, dist_m)
                     
-                    # ─── คำนวณความเร็ว (เวอร์ชัน Smooth) ───
-                    instant_velocity = 0.0
+                    # ─── คำนวณความเร็วและทิศทางจากประวัติการเคลื่อนที่ ───
                     smooth_velocity = 0.0
+                    person_yaw = 0.0  # ค่าเริ่มต้น
                     person_id = i 
+                    current_frame_ids.add(person_id)
                     
                     if person_id in self.human_history:
                         prev_data = self.human_history[person_id]
                         prev_pos = prev_data['pos']
                         prev_time = prev_data['time']
-                        prev_smooth_vel = prev_data.get('vel', 0.0) # ดึงค่าเฉลี่ยเดิมมา
+                        prev_smooth_vel = prev_data.get('vel', 0.0)
+                        prev_yaw = prev_data.get('yaw', 0.0)
                         
-                        # 1. คำนวณความเร็วขณะหนึ่ง (Instantaneous Velocity)
+                        # 1. คำนวณความเร็ว
                         dist_diff = math.sqrt((wx - prev_pos[0])**2 + (wy - prev_pos[1])**2)
                         time_diff = (now - prev_time).nanoseconds / 1e9
                         
-                        if 0.0 < time_diff < 1.0: # ป้องกันกรณี Frame drop นานเกินไป
+                        if 0.0 < time_diff < 1.0:
                             instant_velocity = dist_diff / time_diff
-                            
-                            # 2. กรองค่ากระโดดที่สูงผิดปกติ (Outlier Rejection)
                             instant_velocity = min(instant_velocity, 2.0) 
-
-                            # 3. ใช้ Low-pass Filter (EMA) เพื่อความสมูท
-                            # สูตร: V_new = (alpha * V_old) + ((1 - alpha) * V_instant)
                             smooth_velocity = (self.alpha * prev_smooth_vel) + ((1.0 - self.alpha) * instant_velocity)
                         else:
                             smooth_velocity = prev_smooth_vel
+
+                        # 2. คำนวณ Orientation จากการเคลื่อนที่
+                        self.get_logger().info(f"Person ID {person_id}: "f"Pos=({wx:.2f}, {wy:.2f})")  
+                        calculated_yaw = self._get_orientation(wx, wy, prev_pos[0], prev_pos[1])
+                        
+                        if calculated_yaw is not None:
+                            person_yaw = calculated_yaw
+                        else:
+                            person_yaw = prev_yaw
                     
-                    # 4. Thresholding: ถ้าขยับน้อยมาก ให้ถือว่าหยุดนิ่ง (ป้องกันไข่สั่นตอนคนยืนเฉยๆ)
                     if smooth_velocity < self.min_vel_threshold:
                         smooth_velocity = 0.0
 
-                    # อัปเดตประวัติ (เก็บค่า smooth_velocity ไว้ใช้ต่อในเฟรมหน้า)
+                    # อัปเดตประวัติรอบนี้
                     self.human_history[person_id] = {
                         'pos': (wx, wy), 
                         'time': now, 
-                        'vel': smooth_velocity
+                        'vel': smooth_velocity,
+                        'yaw': person_yaw
                     }
 
-                    # 🔥 ส่งค่า smooth_velocity ไปสร้างไข่
+                    # สร้างไข่และแพ็กลงกระเป๋า MarkerArray
                     egg_marker = self.create_egg_marker(wx, wy, person_yaw, person_id, smooth_velocity)
                     all_markers.markers.append(egg_marker)
 
-                    cv2.putText(cv_image, f"V: {smooth_velocity:.1f} m/s", (x1, y1-50), 
+                    # วาดรายละเอียดลงบนภาพของ OpenCV
+                    cv2.rectangle(cv_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                    cv2.putText(cv_image, f"ID:{person_id} V: {smooth_velocity:.1f} m/s", (x1, y1-10), 
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
-            self.marker_pub.publish(all_markers)
-            cv2.imshow("YOLO Multi-Human Detection", cv_image)
-            cv2.waitKey(1)
-            # 5. Publish Marker ของทุกคนออกไปพร้อมกันในครั้งเดียว
-            self.marker_pub.publish(all_markers)
+            # ─── จัดการลบ Marker ของคนที่เดินหลุดเฟรมไปแล้ว ───
+            # หากคนไหนที่เฟรมนี้หาไม่เจอแล้ว ให้ส่งสัญลักษณ์ DELETE ไปเคลียร์ใน RViz ทิ้ง
+            from visualization_msgs.msg import Marker
+            for old_id in list(self.human_history.keys()):
+                if old_id not in current_frame_ids:
+                    delete_marker = Marker()
+                    delete_marker.header.frame_id = "odom"
+                    delete_marker.ns = "human_social_zones"
+                    delete_marker.id = old_id
+                    delete_marker.action = Marker.DELETE
+                    all_markers.markers.append(delete_marker)
+                    # ลบออกจากหน่วยความจำด้วยเพื่อไม่ให้หน่วงเครื่อง
+                    del self.human_history[old_id]
+
+            # ✅ แก้ไข: Publish และโชว์หน้าต่างเพียงรอบเดียวตอนท้ายสุดให้ถูกต้อง
+            if len(all_markers.markers) > 0:
+                self.marker_pub.publish(all_markers)
 
             cv2.imshow("YOLO Multi-Human Detection", cv_image)
             cv2.waitKey(1)
-
-            # self.get_logger().info(f'Published {len(all_markers.markers)} human markers.')
 
         except Exception as e:
             self.get_logger().error(f'Detection Error: {e}')
@@ -283,47 +295,32 @@ class HumanDetectionNode(Node):
     # ──────────────────────────────────────────────────────────────────────
     # Helper — coordinate conversion
     # ──────────────────────────────────────────────────────────────────────
-
-    def _get_orientation(self, landmarks):
+    def _get_orientation(self, current_x, current_y, prev_x, prev_y):
         """
-        คำนวณมุมการหันของตัวคนแบบ 360 องศา เทียบกับเฟรมของกล้อง/LiDAR
-        0 องศา = หันหน้าไปทางเดียวกับหุ่นยนต์ (หันหลังให้หุ่น)
-        180 หรือ -180 องศา = หันหน้าเข้าหาหุ่นยนต์
+        คำนวณมุมการหันหน้า (Heading) จากทิศทางการเคลื่อนที่พิกัดโลก (odom frame)
+        current_x, current_y: พิกัดเฟรม odom ปัจจุบัน
+        prev_x, prev_y: พิกัดเฟรม odom เฟรมที่แล้ว
         """
-        # 1. ดึงพิกัด (MediaPipe ให้ค่า x, z โดย z คือความลึก)
-        l_shoulder = landmarks[self.mp_pose.PoseLandmark.LEFT_SHOULDER]
-        r_shoulder = landmarks[self.mp_pose.PoseLandmark.RIGHT_SHOULDER]
-        nose = landmarks[self.mp_pose.PoseLandmark.NOSE]
+        # คำนวณความต่างของตำแหน่ง (เวกเตอร์การเคลื่อนที่)
+        dx = current_x - prev_x
+        dy = current_y - prev_y
 
-        # 2. สร้างเวกเตอร์ไหล่ (Right -> Left)
-        # ใน MediaPipe x ไปทางขวาภาพ, z พุ่งเข้าหาภาพ
-        dx = l_shoulder.x - r_shoulder.x
-        dz = l_shoulder.z - r_shoulder.z
+        # คำนวณระยะทางที่เคลื่อนที่ในเฟรมนี้
+        movement_dist = math.sqrt(dx**2 + dy**2)
 
-        # 3. คำนวณมุมของไหล่ และหาเวกเตอร์ตั้งฉาก (Heading Vector)
-        # มุมตั้งฉากคือ atan2(-dz, dx) สำหรับทิศทางพุ่งออก
-        person_yaw = math.atan2(dx, -dz) 
+        # ตั้งค่า Threshold: ถ้าขยับน้อยมาก (เช่น ยืนนิ่งๆ แล้วพิกัดแกว่งจาก Noise) 
+        # ไม่ควรคำนวณมุมใหม่ ให้ใช้มุมเดิมไปก่อนเพื่อป้องกันมุมหมุนสุ่ม (Jitter)
+        if movement_dist < 0.05: # ขยับน้อยกว่า 5 เซนติเมตร
+            return None # ส่ง None กลับไป เพื่อให้ระบบรู้ว่าไม่ต้องอัปเดตทิศทาง
 
-        # 4. ใช้จมูกเช็ค Front/Back (แก้ปัญหาความกำกวมของมุม)
-        # ถ้าจมูกมีค่า z น้อยกว่าค่าเฉลี่ยของไหล่ (z น้อยคือเข้าใกล้กล้องมากขึ้นในบางระบบ)
-        # หรือใช้ความสัมพันธ์ของตำแหน่ง x ในการ Re-check
-        shoulder_center_z = (l_shoulder.z + r_shoulder.z) / 2
-        
-        # ถ้าจมูกอยู่ "หลัง" ไหล่ในมิติความลึก (ในพิกัด MediaPipe)
-        if nose.z > shoulder_center_z:
-            # กรณีนี้อาจเป็นการหันหลัง ให้กลับทิศทางเวกเตอร์ถ้าจำเป็น 
-            # (ขึ้นอยู่กับว่าคุณต้องการมุมสัมบูรณ์เทียบกับตัวหุ่นยนต์อย่างไร)
-            pass
+        # คำนวณมุมในเฟรมโลก (odom) โดยตรง 
+        # ใน odom frame: 0 Radian คือทิศหน้าหุ่นยนต์พุ่งไป (ตามมาตรฐาน ROS)
+        yaw = math.atan2(dy, dx)
 
-        # 5. ปรับให้เข้ากับมาตรฐาน LiDAR (0 = หน้าหุ่น)
-        # ปกติถ้าคนหันหน้าเข้าหาหุ่นยนต์ มุมควรจะเป็น PI (180 deg)
-        # ถ้าคนหันหลังให้หุ่นยนต์ (เดินไปทางเดียวกับหุ่น) มุมควรจะเป็น 0
-        final_yaw = person_yaw + math.pi / 2 # ปรับ Offset ให้ตรงกับทิศทาง Robot
-        
-        # Normalize มุมให้อยู่ในช่วง -PI ถึง PI
-        final_yaw = math.atan2(math.sin(final_yaw), math.cos(final_yaw))
+        # Normalize มุมให้อยู่ในช่วง [-PI, PI] เสมอเพื่อความปลอดภัย
+        yaw = math.atan2(math.sin(yaw), math.cos(yaw))
 
-        return final_yaw # หน่วยเป็น Radian
+        return yaw
 
     def _get_distance_from_scan(self, u_center):
         """
