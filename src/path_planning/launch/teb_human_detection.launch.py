@@ -116,6 +116,12 @@ def generate_launch_description():
         remappings=[('/world/crossing_humans/dynamic_pose/info', '/gz_dynamic_poses')],
         output='screen',
     )
+    camera_bridge = Node(
+        package='ros_gz_image', executable='image_bridge', name='camera_bridge',
+        arguments=['/front_camera'],
+        remappings=[('/front_camera', '/front_camera/image_raw')],
+        output='screen',
+    )
 
     # ── Motion + Odometry ─────────────────────────────────────────────────
     cmd_vel_relay = Node(
@@ -176,6 +182,7 @@ def generate_launch_description():
         lidar_bridge,
         imu_bridge,
         dynamic_pose_bridge,
+        camera_bridge,
         cmd_vel_relay,
         gz_pose_odom,
         # local_costmap_node,
