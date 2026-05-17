@@ -62,6 +62,10 @@ class PathPlanningNode(Node):
     def __init__(self):
         super().__init__('path_planning_node')
 
+        # ── Declare Param
+        self.declare_parameter('cost_map_topic', '/local_costmap_social')
+        self.cost_map_topic      = self.get_parameter('cost_map_topic').value
+
         # ── General parameters ────────────────────────────────────────────
         self.planning_freq          = 10     # Hz
         self.lookahead_dist         = 15.0   # m — local segment length
@@ -81,7 +85,7 @@ class PathPlanningNode(Node):
         ))
 
         # ── Costmap-to-polygons parameters ────────────────────────────────
-        self.obstacle_threshold = 60     # cost >= this -> obstacle cell
+        self.obstacle_threshold = 30     # cost >= this -> obstacle cell
         self.cluster_min_cells  = 3      # filter noise clusters
         self.search_margin      = 8.0    # m beyond lookahead to scan
         self.mcch_split_thresh  = 0.3    # m — MCCH fictitious-edge threshold
@@ -89,7 +93,7 @@ class PathPlanningNode(Node):
         # ── Subscribers ───────────────────────────────────────────────────
         self.create_subscription(Odometry,       '/odom',          self._odom_callback,          10)
         self.create_subscription(Path,           '/global_path',   self._global_path_callback,   10)
-        self.create_subscription(OccupancyGrid,  '/local_costmap', self._local_costmap_callback, 10)
+        self.create_subscription(OccupancyGrid,  self.cost_map_topic, self._local_costmap_callback, 10)
 
         # ── Publishers ────────────────────────────────────────────────────
         self.cmd_vel_pub = self.create_publisher(TwistStamped, '/cmd_vel',           10)
@@ -144,7 +148,16 @@ class PathPlanningNode(Node):
     # ──────────────────────────────────────────────────────────────────────
 
     def _replan(self):
-        if self._robot_pose is None or self._global_path is None or self._local_costmap is None:
+        if self._robot_pose is None or self._local_costmap is None:
+            return
+
+        # 1. Costmap -> polygon obstacles (BFS clustering + MCCH split).
+        # Run every tick — independent of goal/motion — so the hulls
+        # follow moving obstacles even when the robot is idle or at goal.
+        self._polygons = self._costmap_to_polygons()
+        self._publish_polygons()
+
+        if self._global_path is None:
             return
         if len(self._global_path.poses) < self.min_waypoints_required:
             return
@@ -152,10 +165,6 @@ class PathPlanningNode(Node):
         if euclidean(self._robot_pose, self._global_path.poses[-1].pose) < self.goal_tolerance:
             self._pub_stop()
             return
-
-        # 1. Costmap -> polygon obstacles (BFS clustering + MCCH split).
-        self._polygons = self._costmap_to_polygons()
-        self._publish_polygons()
 
         # 2. Reference segment from global path.
         self._prune_index = self._find_closest_index()

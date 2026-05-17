@@ -16,6 +16,7 @@ Panels:
         - /Real Map1
         - /Local Costmap1
         - /Detected Humans1
+        - /Obstacle Polygons1
         - /Planned Path1
         - /Actual Path1
       Splitter Ratio: 0.6
@@ -283,6 +284,20 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /detected_humans
+      Value: true
+
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Obstacle Polygons
+      Enabled: true
+      Namespaces:
+        obstacle_polygons: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /obstacle_polygons
       Value: true
 
     - Class: rviz_default_plugins/Path

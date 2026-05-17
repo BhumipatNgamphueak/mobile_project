@@ -147,7 +147,10 @@ def generate_launch_description():
     path_planning_node = Node(
         package='path_planning', executable='path_planning_node',
         name='path_planning_node', output='screen',
-        parameters=[{'use_sim_time': True}],
+        parameters=[{
+            'use_sim_time': True,
+            'cost_map_topic': '/local_costmap',  # LiDAR-only, no human detection
+        }],
     )
 
     # ── RViz ──────────────────────────────────────────────────────────────

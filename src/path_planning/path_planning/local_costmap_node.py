@@ -19,7 +19,7 @@ class LocalCostMapNode(Node):
         self.declare_parameter('height', 15.0)          # meters
         self.declare_parameter('robot_base_frame', 'base_link')
         self.declare_parameter('global_frame', 'odom')
-        self.declare_parameter('inflation_radius', 0.55)
+        self.declare_parameter('inflation_radius', 0.12)
         self.declare_parameter('cost_scaling_factor', 10.0)
 
         self.resolution = self.get_parameter('resolution').value

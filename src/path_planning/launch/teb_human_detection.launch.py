@@ -1,13 +1,14 @@
 """
-teb_direct.launch.py
-====================
-Full simulation stack with TEB local planner driving /cmd_vel directly.
-Pure pursuit is NOT launched — path_planning_node is the sole velocity controller.
+teb_human_detection.launch.py
+=============================
+Full simulation stack with TEB local planner + human-aware costmap.
+path_planning_node consumes the social costmap (LiDAR + GMM around humans).
 
 Adds:
-  - local_costmap_node   (LiDAR → occupancy grid)
-  - global_path_node     (RViz goal → straight-line reference path)
-  - path_planning_node   (TEB optimiser → /cmd_vel)
+  - local_costmap_node    (LiDAR → /local_costmap)
+  - social_costmap_node   (YOLO + GMM overlay → /local_costmap_social)
+  - global_path_node      (RViz goal → straight-line reference path)
+  - path_planning_node    (TEB optimiser on /local_costmap_social → /cmd_vel)
 
 Does NOT launch:
   - pure_pursuit / regulated_pure_pursuit_node
@@ -140,17 +141,24 @@ def generate_launch_description():
     )
 
     # ── Planning stack ────────────────────────────────────────────────────
-    human_detect_costmap_node = Node(
-        package='human_detection', executable='human_detection_node',
-        name='human_detection_node', output='screen',
-        parameters=[{'use_sim_time': True}],
-    )
-    
-    # local_costmap_node = Node(
-    #     package='path_planning', executable='local_costmap_node',
-    #     name='local_costmap_node', output='screen',
+    # human_detect_costmap_node = Node(
+    #     package='human_detection', executable='human_detection_node',
+    #     name='human_detection_node', output='screen',
     #     parameters=[{'use_sim_time': True}],
     # )
+    
+    local_costmap_node = Node(
+        package='path_planning', executable='local_costmap_node',
+        name='local_costmap_node', output='screen',
+        parameters=[{'use_sim_time': True}],
+    )
+
+    social_costmap_node = Node(
+        package='human_detection', executable='social_costmap_node',
+        name='social_costmap_node', output='screen',
+        parameters=[{'use_sim_time': True}],
+    )
+
     global_path_node = Node(
         package='path_planning', executable='global_path_node',
         name='global_path_node', output='screen',
@@ -159,7 +167,10 @@ def generate_launch_description():
     path_planning_node = Node(
         package='path_planning', executable='path_planning_node',
         name='path_planning_node', output='screen',
-        parameters=[{'use_sim_time': True}],
+        parameters=[{
+            'use_sim_time': True,
+            'cost_map_topic': '/local_costmap_social',  # LiDAR + social GMM
+        }],
     )
 
     # ── RViz ──────────────────────────────────────────────────────────────
@@ -185,8 +196,9 @@ def generate_launch_description():
         camera_bridge,
         cmd_vel_relay,
         gz_pose_odom,
-        # local_costmap_node,
-        human_detect_costmap_node,
+        local_costmap_node,
+        social_costmap_node,
+        # human_detect_costmap_node,
         global_path_node,
         path_planning_node,
         rviz_node,
