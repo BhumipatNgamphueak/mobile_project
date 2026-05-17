@@ -81,7 +81,7 @@ class HumanDetectionNode(Node):
         # Dynamic Scale Configurations
         self.human_history = {} 
         self.min_front_scale = 1.2 
-        self.velocity_factor = 0.8
+        self.velocity_factor = 0.6
         self.alpha = 0.8
         self.min_vel_threshold = 0.1
 
