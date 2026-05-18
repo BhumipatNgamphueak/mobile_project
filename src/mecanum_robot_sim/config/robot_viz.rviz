@@ -7,10 +7,15 @@ Panels:
         - /Global Options1
         - /Ground Grid1
         - /Robot Model1
-        - /Robot Direction1
         - /World Ground Truth1
         - /Human Predicted Paths1
         - /LiDAR Scan1
+        - /Real Map1
+        - /Local Costmap1
+        - /Social Costmap1
+        - /Detected Humans1
+        - /Obstacle Polygons1
+        - /Planned Path1
       Splitter Ratio: 0.55
     Tree Height: 900
   - Class: rviz_common/Views
@@ -62,7 +67,21 @@ Visualization Manager:
           Value: true
         odom:
           Value: true
-      Marker Scale: 0.7
+        lidar_link:
+          Value: true
+        camera_link:
+          Value: false
+        imu_link:
+          Value: false
+        front_left_wheel:
+          Value: false
+        front_right_wheel:
+          Value: false
+        rear_left_wheel:
+          Value: false
+        rear_right_wheel:
+          Value: false
+      Marker Scale: 0.5
       Show Arrows: true
       Show Axes: true
       Show Names: true
@@ -74,23 +93,23 @@ Visualization Manager:
       Value: true
 
     - Class: rviz_default_plugins/Odometry
-      Name: Robot Direction
+      Name: Odometry
       Enabled: true
-      Angle Tolerance: 0.02
-      Color: 0; 220; 255
+      Angle Tolerance: 0.1
+      Color: 255; 25; 0
       Color Style: Unique
-      Keep: 1
-      Length: 0.9
-      Position Tolerance: 0.01
+      Keep: 50
+      Length: 0.3
+      Position Tolerance: 0.1
       Shape:
-        Alpha: 1.0
-        Axes Length: 0.5
-        Axes Radius: 0.03
-        Color: 0; 220; 255
-        Head Length: 0.20
-        Head Radius: 0.10
-        Shaft Length: 0.65
-        Shaft Radius: 0.05
+        Alpha: 1
+        Axes Length: 0.3
+        Axes Radius: 0.02
+        Color: 255; 25; 0
+        Head Length: 0.07
+        Head Radius: 0.035
+        Shaft Length: 0.23
+        Shaft Radius: 0.015
         Value: Arrow
       Topic:
         Depth: 5
@@ -102,14 +121,8 @@ Visualization Manager:
       Value: true
 
     # ────────────────────────  WORLD GROUND TRUTH  ──────────────────────────
-    # Single MarkerArray emitted by human_marker_publisher.py.
-    # Includes namespaces:
-    #   walls         — boundary walls (semi-transparent grey CUBE)
-    #   wall_edges    — bright outline so walls stay readable
-    #   obstacles     — static obstacles from the SDF
-    #   humans        — live actor cylinders
-    #   human_labels  — actor names floating above each cylinder
-    #   human_vel     — velocity arrow (only when moving)
+    # Single MarkerArray from human_marker_publisher.py.
+    # Namespaces: walls, wall_edges, obstacles, humans, human_labels, human_vel
     - Class: rviz_default_plugins/MarkerArray
       Name: World Ground Truth
       Enabled: true
@@ -145,11 +158,12 @@ Visualization Manager:
       Value: true
 
     # Output of the human_detection algorithm (separate from ground truth)
+    # Namespace is 'human_social_zones' (set by social_costmap_node / human_detection_node)
     - Class: rviz_default_plugins/MarkerArray
       Name: Detected Humans
       Enabled: true
       Namespaces:
-        detected_humans: true
+        human_social_zones: true
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -195,6 +209,55 @@ Visualization Manager:
       Use rainbow: false
       Value: true
 
+    # ─────────────────────────────  MAPS  ───────────────────────────────────
+    - Class: rviz_default_plugins/Map
+      Name: Real Map
+      Enabled: true
+      Alpha: 0.5
+      Color Scheme: costmap
+      Draw Behind: false
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /real_map
+      Use Timestamp: false
+      Value: true
+
+    - Class: rviz_default_plugins/Map
+      Name: Local Costmap
+      Enabled: true
+      Alpha: 0.7
+      Color Scheme: costmap
+      Draw Behind: false
+      Topic:
+        Depth: 1
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /local_costmap
+      Use Timestamp: false
+      Value: true
+
+    - Class: rviz_default_plugins/Map
+      Name: Social Costmap
+      Enabled: true
+      Alpha: 0.7
+      Color Scheme: costmap
+      Draw Behind: false
+      Topic:
+        Depth: 1
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /local_costmap_social
+      Use Timestamp: false
+      Value: true
+
     # ───────────────────────────  NAVIGATION  ───────────────────────────────
     - Class: rviz_default_plugins/Path
       Name: Robot Trail
@@ -221,6 +284,20 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /visualization/robot_trail
+      Value: true
+
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Obstacle Polygons
+      Enabled: true
+      Namespaces:
+        obstacle_polygons: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /obstacle_polygons
       Value: true
 
     - Class: rviz_default_plugins/Path

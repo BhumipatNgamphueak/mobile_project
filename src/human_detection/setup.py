@@ -20,6 +20,7 @@ setup(
     entry_points={
         'console_scripts': [
             'human_detection_node = human_detection.human_detection_node:main',
+            'social_costmap_node = human_detection.social_costmap_node:main',
         ],
     },
 )

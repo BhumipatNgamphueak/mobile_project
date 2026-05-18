@@ -330,6 +330,19 @@ class HumanMarkerPublisher(Node):
         self._time_scale = float(self.declare_parameter('time_scale',   1.0).value)
         world            = self.declare_parameter('world', 'crossing_humans').value
 
+        # The world→odom transform is `subtract spawn`.  If these are still
+        # the (-8, 0) defaults while the robot actually spawned elsewhere,
+        # every human marker is offset from the real Gazebo pose — log them
+        # so the mismatch is visible at a glance.
+        self.get_logger().info(
+            f'world→odom offset: spawn=({self._spawn_x:+.2f}, '
+            f'{self._spawn_y:+.2f})  time_scale={self._time_scale:.2f}')
+
+        # Names seen on /gz_dynamic_poses that don't match a known actor —
+        # logged once each so an actor-naming mismatch (live data silently
+        # dropped → permanent SDF-replay fallback) is diagnosable.
+        self._unknown_frames: set[str] = set()
+
         share = get_package_share_directory('mecanum_robot_sim')
         sdf_path = os.path.join(share, 'worlds', f'{world}.sdf')
 
@@ -417,6 +430,15 @@ class HumanMarkerPublisher(Node):
         for tf in msg.transforms:
             name = tf.child_frame_id
             if not name or name not in self._actor_color:
+                if (name and name not in self._unknown_frames
+                        and ('human' in name.lower()
+                             or 'actor' in name.lower())):
+                    self._unknown_frames.add(name)
+                    self.get_logger().warn(
+                        f'/gz_dynamic_poses carries "{name}" but no SDF '
+                        f'actor matches it — live pose ignored, this human '
+                        f'will use open-loop SDF replay. Known actors: '
+                        f'{sorted(self._actor_color)}')
                 continue
             wx = tf.transform.translation.x
             wy = tf.transform.translation.y

@@ -24,9 +24,9 @@ def generate_launch_description():
     ros_gz_sim = get_package_share_directory('ros_gz_sim')
 
     # ── Arguments ────────────────────────────────────────────────────────
-    world_arg   = DeclareLaunchArgument('world',   default_value='crossing_humans')
-    spawn_x_arg = DeclareLaunchArgument('spawn_x', default_value='-8.0')
-    spawn_y_arg = DeclareLaunchArgument('spawn_y', default_value=' 0.0')
+    world_arg   = DeclareLaunchArgument('world',   default_value='crossing_humans_v2')
+    spawn_x_arg = DeclareLaunchArgument('spawn_x', default_value='-7.0')
+    spawn_y_arg = DeclareLaunchArgument('spawn_y', default_value=' 4.0')
     spawn_z_arg = DeclareLaunchArgument('spawn_z', default_value='0.0')
     rviz_arg      = DeclareLaunchArgument('rviz',      default_value='true',
                                           description='Launch RViz2')
@@ -141,11 +141,11 @@ def generate_launch_description():
         executable='image_bridge',
         name='camera_image_bridge',
         arguments=['/front_camera'],
+        remappings=[('/front_camera', '/front_camera/image_raw')],
         output='screen',
     )
 
     # Dynamic pose: Ignition world poses → /gz_dynamic_poses (TFMessage)
-    # Used by gz_pose_odom to get ground-truth robot position.
     # Topic includes the world name, so build it dynamically from the 'world' argument.
     dynamic_pose_bridge = Node(
         package='ros_gz_bridge',
@@ -198,15 +198,14 @@ def generate_launch_description():
         output='screen',
         parameters=[{
             'use_sim_time': True,
-            'spawn_x': LaunchConfiguration('spawn_x'),
-            'spawn_y': LaunchConfiguration('spawn_y'),
+            # See human_marker_node: float cast needed so a non-default
+            # spawn arg isn't silently dropped for the node default.
+            'spawn_x': ParameterValue(LaunchConfiguration('spawn_x'), value_type=float),
+            'spawn_y': ParameterValue(LaunchConfiguration('spawn_y'), value_type=float),
         }],
     )
 
-    # ── Service bridge: Ignition /world/<w>/set_pose → ROS service ────────
-    # Lets human_controller call set_pose via rclpy instead of spawning
-    # `ign service` subprocesses (which generated Host-unreachable log spam
-    # because the CLI helper exited before Gazebo's response landed).
+    # ── Service bridge: /world/<w>/set_pose → ROS service ─────────────────
     set_pose_bridge = Node(
         package='ros_gz_bridge',
         executable='parameter_bridge',
@@ -222,10 +221,6 @@ def generate_launch_description():
     )
 
     # ── Human controller ──────────────────────────────────────────────────
-    # Drives the kinematic human models in the world along their SDF
-    # waypoints via /world/<w>/set_pose.  This causes their pose to appear
-    # in /gz_dynamic_poses, which the marker publisher then renders as
-    # ground truth — no SDF interpolation guessing.
     human_controller_node = Node(
         package='mecanum_robot_sim',
         executable='human_controller',
@@ -245,8 +240,13 @@ def generate_launch_description():
         name='human_marker_publisher',
         output='screen',
         parameters=[{
-            'spawn_x':    LaunchConfiguration('spawn_x'),
-            'spawn_y':    LaunchConfiguration('spawn_y'),
+            # value_type=float is required: a bare LaunchConfiguration is
+            # substituted as a string, which clashes with the node's float
+            # default for spawn_x/spawn_y and silently falls back to the
+            # default (-8, 0) → every human marker offset from the real
+            # Gazebo pose.
+            'spawn_x':    ParameterValue(LaunchConfiguration('spawn_x'),    value_type=float),
+            'spawn_y':    ParameterValue(LaunchConfiguration('spawn_y'),    value_type=float),
             'world':      ParameterValue(LaunchConfiguration('world'),      value_type=str),
             'time_scale': ParameterValue(LaunchConfiguration('time_scale'), value_type=float),
             'use_sim_time': True,

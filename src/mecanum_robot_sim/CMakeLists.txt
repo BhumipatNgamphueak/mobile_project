@@ -9,6 +9,10 @@ install(DIRECTORY urdf config launch worlds
 
 install(PROGRAMS scripts/human_marker_publisher.py
   DESTINATION lib/${PROJECT_NAME} RENAME human_marker_publisher)
+install(PROGRAMS scripts/human_controller.py
+  DESTINATION lib/${PROJECT_NAME} RENAME human_controller)
+install(PROGRAMS scripts/scale_human_speed.py
+  DESTINATION lib/${PROJECT_NAME} RENAME scale_human_speed)
 install(PROGRAMS scripts/odom_tf_broadcaster.py
   DESTINATION lib/${PROJECT_NAME} RENAME odom_tf_broadcaster)
 install(PROGRAMS scripts/cmd_vel_relay.py
@@ -17,9 +21,5 @@ install(PROGRAMS scripts/kinematic_odom.py
   DESTINATION lib/${PROJECT_NAME} RENAME kinematic_odom)
 install(PROGRAMS scripts/gz_pose_odom.py
   DESTINATION lib/${PROJECT_NAME} RENAME gz_pose_odom)
-install(PROGRAMS scripts/human_controller.py
-  DESTINATION lib/${PROJECT_NAME} RENAME human_controller)
-install(PROGRAMS scripts/scale_human_speed.py
-  DESTINATION lib/${PROJECT_NAME} RENAME scale_human_speed)
 
 ament_package()
