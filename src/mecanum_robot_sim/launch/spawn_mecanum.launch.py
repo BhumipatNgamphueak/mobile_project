@@ -26,7 +26,7 @@ def generate_launch_description():
     # ── Arguments ────────────────────────────────────────────────────────
     world_arg   = DeclareLaunchArgument('world',   default_value='crossing_humans_v2')
     spawn_x_arg = DeclareLaunchArgument('spawn_x', default_value='-7.0')
-    spawn_y_arg = DeclareLaunchArgument('spawn_y', default_value=' 4.0')
+    spawn_y_arg = DeclareLaunchArgument('spawn_y', default_value=' 0.0')
     spawn_z_arg = DeclareLaunchArgument('spawn_z', default_value='0.0')
     rviz_arg      = DeclareLaunchArgument('rviz',      default_value='true',
                                           description='Launch RViz2')
@@ -312,7 +312,7 @@ def generate_launch_description():
 
     # Delay spawn — gives Gazebo time to load the world before the create
     # node contacts it (avoids repeated retries in the log).
-    spawn_robot_delayed = TimerAction(period=8.0, actions=[spawn_robot])
+    spawn_robot_delayed = TimerAction(period=5.0, actions=[spawn_robot])
 
     return LaunchDescription([
         world_arg, spawn_x_arg, spawn_y_arg, spawn_z_arg,

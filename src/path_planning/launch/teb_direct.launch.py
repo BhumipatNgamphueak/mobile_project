@@ -15,8 +15,8 @@ Does NOT launch:
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import (DeclareLaunchArgument, IncludeLaunchDescription,
-                             TimerAction)
+from launch.actions import (DeclareLaunchArgument, ExecuteProcess,
+                             IncludeLaunchDescription, TimerAction)
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import Command, FindExecutable, LaunchConfiguration, PythonExpression
 from launch.conditions import IfCondition
@@ -31,12 +31,22 @@ def generate_launch_description():
     # ── Arguments ─────────────────────────────────────────────────────────
     world_arg   = DeclareLaunchArgument('world',   default_value='crossing_humans')
     spawn_x_arg = DeclareLaunchArgument('spawn_x', default_value='-7.0')
-    spawn_y_arg = DeclareLaunchArgument('spawn_y', default_value=' 4.0')
+    # spawn_y_arg = DeclareLaunchArgument('spawn_y', default_value=' 4.0')
+    spawn_y_arg = DeclareLaunchArgument('spawn_y', default_value=' 0.0')
+
     spawn_z_arg = DeclareLaunchArgument('spawn_z', default_value='0.0')
     rviz_arg    = DeclareLaunchArgument('rviz',    default_value='true',
                                         description='Launch RViz2')
     time_scale_arg = DeclareLaunchArgument('time_scale', default_value='1.0',
                                            description='Scale factor for human SDF-trajectory playback')
+    lookahead_arg  = DeclareLaunchArgument('lookahead_dist', default_value='15.0',
+                                           description='Local segment lookahead distance (m)')
+    goal_x_arg     = DeclareLaunchArgument('goal_x', default_value='7.0',
+                                           description='Auto-publish goal x (odom frame)')
+    goal_y_arg     = DeclareLaunchArgument('goal_y', default_value='0.0',
+                                           description='Auto-publish goal y (odom frame)')
+    auto_goal_arg  = DeclareLaunchArgument('auto_goal', default_value='true',
+                                           description='Publish goal automatically (false = robot stays still)')
 
     # ── Gazebo ────────────────────────────────────────────────────────────
     gz_args = PythonExpression(
@@ -192,7 +202,9 @@ def generate_launch_description():
         name='path_planning_node', output='screen',
         parameters=[{
             'use_sim_time': True,
-            'cost_map_topic': '/local_costmap',  # LiDAR-only, no human detection
+            'cost_map_topic': '/local_costmap',
+            'lookahead_dist': LaunchConfiguration('lookahead_dist'),
+            'world_name':     LaunchConfiguration('world'),
         }],
     )
 
@@ -205,12 +217,30 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration('rviz')),
     )
 
+    auto_goal = TimerAction(
+        period=5.0,
+        actions=[ExecuteProcess(
+            cmd=[
+                'ros2', 'topic', 'pub', '--once', '/goal_pose',
+                'geometry_msgs/msg/PoseStamped',
+                ['{header: {frame_id: odom}, pose: {position: {x: ',
+                 LaunchConfiguration('goal_x'),
+                 ', y: ',
+                 LaunchConfiguration('goal_y'),
+                 ', z: 0.0}, orientation: {w: 1.0}}}'],
+            ],
+            output='screen',
+            condition=IfCondition(LaunchConfiguration('auto_goal')),
+        )],
+    )
+
     return LaunchDescription([
-        world_arg, spawn_x_arg, spawn_y_arg, spawn_z_arg, rviz_arg, time_scale_arg,
+        world_arg, spawn_x_arg, spawn_y_arg, spawn_z_arg, rviz_arg,
+        time_scale_arg, lookahead_arg, goal_x_arg, goal_y_arg, auto_goal_arg,
         gz_sim,
         robot_state_publisher,
         joint_state_publisher,
-        TimerAction(period=8.0, actions=[spawn_robot]),
+        TimerAction(period= 6.0, actions=[spawn_robot]),
         clock_bridge,
         cmd_vel_bridge,
         lidar_bridge,
@@ -225,4 +255,5 @@ def generate_launch_description():
         global_path_node,
         path_planning_node,
         rviz_node,
+        auto_goal,
     ])

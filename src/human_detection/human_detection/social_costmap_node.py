@@ -15,13 +15,16 @@ Pipeline:
 """
 
 import array
+import csv
 import math
+import os
 from collections import deque
+from datetime import datetime
 
 import cv2
 import rclpy
 from cv_bridge import CvBridge
-from geometry_msgs.msg import Point
+from geometry_msgs.msg import Point, PoseArray
 from nav_msgs.msg import OccupancyGrid, Odometry
 from rclpy.node import Node
 from sensor_msgs.msg import Image, LaserScan
@@ -165,6 +168,8 @@ class SocialCostmapNode(Node):
         self.declare_parameter('input_costmap_topic',   '/local_costmap')
         self.declare_parameter('output_costmap_topic',  '/local_costmap_social')
         self.declare_parameter('odom_frame',            'odom')
+        self.declare_parameter('world_name',            'unknown')
+        self.declare_parameter('log_dir',               os.path.expanduser('~/robot_logs'))
         self.declare_parameter('detection_range',       8.0)
         self.declare_parameter('min_front_scale',       1.2)
         self.declare_parameter('velocity_factor',       0.6)
@@ -188,6 +193,8 @@ class SocialCostmapNode(Node):
         self.peak_cost            = int(self.get_parameter('peak_cost').value)
         self.vel_alpha            = self.get_parameter('alpha').value
         self.min_vel_threshold    = self.get_parameter('min_vel_threshold').value
+        self._world_name          = self.get_parameter('world_name').value
+        self._log_dir             = self.get_parameter('log_dir').value
 
         # Camera mount: urdf camera_joint origin x=0.40 forward of
         # base_link; added back in _pixel_range_to_world.
@@ -223,6 +230,26 @@ class SocialCostmapNode(Node):
         # Per-person robust trackers (least-squares velocity estimation).
         self.trackers: dict[int, PersonTracker] = {}
 
+        # ── Perception accuracy logger ────────────────────────────────────
+        self._latest_gt: list[tuple[float, float]] = []
+        self.create_subscription(PoseArray, '/human_gt_poses', self._gt_callback, 10)
+
+        os.makedirs(self._log_dir, exist_ok=True)
+        stamp      = datetime.now().strftime('%Y%m%d_%H%M%S')
+        perc_path  = os.path.join(
+            self._log_dir, f'perception_log_{self._world_name}_{stamp}.csv')
+        self._perc_file   = open(perc_path, 'w', newline='')
+        self._perc_writer = csv.writer(self._perc_file)
+        self._perc_writer.writerow([
+            'time_s',
+            'gt_id', 'gt_x', 'gt_y', 'gt_speed_mps',
+            'det_id', 'det_x', 'det_y',
+            'pos_error_m', 'det_speed_mps',
+            'n_gt', 'n_detected',
+        ])
+        self._perc_flush_counter = 0
+        self.get_logger().info(f'Perception log → {perc_path}')
+
         # ----------------- Vision -----------------
         self.bridge             = CvBridge()
         self.human_detect_model = YOLO('yolov8n.pt')
@@ -241,6 +268,14 @@ class SocialCostmapNode(Node):
     # ------------------------------------------------------------------
     # Callbacks
     # ------------------------------------------------------------------
+    def _gt_callback(self, msg: PoseArray) -> None:
+        # position.(x,y) = odom position; orientation.(x,y) = (vx, vy)
+        self._latest_gt = [
+            (p.position.x, p.position.y,
+             p.orientation.x, p.orientation.y)
+            for p in msg.poses
+        ]
+
     def _scan_callback(self, msg: LaserScan):
         self._latest_scan = msg
 
@@ -395,6 +430,70 @@ class SocialCostmapNode(Node):
 
         except Exception as e:
             self.get_logger().error(f'SocialCostmap error: {e}')
+
+        # Logging is outside the try/except so write errors surface immediately
+        self._log_perception(t_now)
+
+    # ------------------------------------------------------------------
+    # Perception accuracy logger
+    # ------------------------------------------------------------------
+    def _log_perception(self, t_now: float) -> None:
+        # Skip until GT publisher is alive — avoids spurious startup rows
+        if not self._latest_gt:
+            return
+
+        gt_list = self._latest_gt          # list of (gx, gy, gvx, gvy)
+        n_gt    = len(gt_list)
+        n_det   = len(self.trackers)
+
+        used_pids: set[int] = set()
+
+        # For each GT human find closest detected tracker.
+        # Use predict(t_now) to match the position shown in RViz.
+        for gi, (gx, gy, gvx, gvy) in enumerate(gt_list):
+            gt_speed = math.hypot(gvx, gvy)
+            best_pid  = -1
+            best_dist = float('inf')
+            best_ex = best_ey = best_spd = 0.0
+            for pid, tr in self.trackers.items():
+                if pid in used_pids:
+                    continue
+                ex, ey = tr.predict(t_now)
+                d = math.hypot(ex - gx, ey - gy)
+                if d < best_dist:
+                    best_dist, best_pid = d, pid
+                    best_ex, best_ey, best_spd = ex, ey, tr.speed
+            if best_pid >= 0:
+                used_pids.add(best_pid)
+            self._perc_writer.writerow([
+                f'{t_now:.4f}',
+                gi, f'{gx:.4f}', f'{gy:.4f}', f'{gt_speed:.4f}',
+                best_pid if best_pid >= 0 else '',
+                f'{best_ex:.4f}' if best_pid >= 0 else '',
+                f'{best_ey:.4f}' if best_pid >= 0 else '',
+                f'{best_dist:.4f}' if best_pid >= 0 else '',
+                f'{best_spd:.4f}' if best_pid >= 0 else '',
+                n_gt, n_det,
+            ])
+
+        # Unmatched detections = false positives
+        for pid, tr in self.trackers.items():
+            if pid in used_pids:
+                continue
+            ex, ey = tr.predict(t_now)
+            self._perc_writer.writerow([
+                f'{t_now:.4f}',
+                '', '', '', '',
+                pid, f'{ex:.4f}', f'{ey:.4f}',
+                '', f'{tr.speed:.4f}',
+                n_gt, n_det,
+            ])
+
+        # Flush every 30 rows (~1 s at 30 Hz)
+        self._perc_flush_counter += 1
+        if self._perc_flush_counter >= 30:
+            self._perc_file.flush()
+            self._perc_flush_counter = 0
 
     # ------------------------------------------------------------------
     # Stable person ID assignment
@@ -606,6 +705,8 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     finally:
+        node._perc_file.flush()
+        node._perc_file.close()
         node.destroy_node()
         rclpy.shutdown()
 

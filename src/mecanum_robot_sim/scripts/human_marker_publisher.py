@@ -39,7 +39,7 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 
 from ament_index_python.packages import get_package_share_directory
 from nav_msgs.msg import Odometry, Path
-from geometry_msgs.msg import Point, PoseStamped
+from geometry_msgs.msg import Point, Pose, PoseArray, PoseStamped
 from tf2_msgs.msg import TFMessage
 from visualization_msgs.msg import Marker, MarkerArray
 
@@ -254,6 +254,23 @@ def parse_world_sdf(sdf_path: str) -> dict:
         col = _color_from_material(visual.find('material'))
         out['statics'].append((name, kind, shape, x, y, z, sx, sy, sz, *col))
 
+    # Build a visual-delay lookup from *_anim actors so the marker timing
+    # matches what Gazebo renders, not the kinematic model's physics delay.
+    anim_delays: dict[str, float] = {}
+    for actor in world_el.findall('actor'):
+        aname = actor.get('name', '')
+        if not aname.endswith('_anim'):
+            continue
+        script = actor.find('script')
+        if script is not None:
+            d_el = script.find('delay_start')
+            if d_el is not None and d_el.text:
+                try:
+                    base = aname[:-len('_anim')]
+                    anim_delays[base] = float(d_el.text)
+                except ValueError:
+                    pass
+
     # Humans:
     #  (a) New format: <model name="human_*"> with <plugin filename="__waypoints__">
     #  (b) Legacy format: <actor name="human_*">
@@ -276,13 +293,17 @@ def parse_world_sdf(sdf_path: str) -> dict:
                         'delay': 0.0, 'loop': False,
                         'waypoints': [(0.0, xs[0], xs[1])]}
             continue
-        # Reuse the actor trajectory parser by adapting plugin children
-        delay = 0.0
-        loop  = True
-        d = wp_plugin.find('delay_start')
-        if d is not None and d.text:
-            try:    delay = float(d.text)
-            except ValueError: pass
+        # Use visual actor delay if available so marker matches Gazebo render.
+        # Falls back to kinematic model delay when no *_anim sibling exists.
+        if name in anim_delays:
+            delay = anim_delays[name]
+        else:
+            delay = 0.0
+            d = wp_plugin.find('delay_start')
+            if d is not None and d.text:
+                try:    delay = float(d.text)
+                except ValueError: pass
+        loop = True
         l = wp_plugin.find('loop')
         if l is not None and l.text:
             loop = l.text.strip().lower() in ('1', 'true')
@@ -395,6 +416,7 @@ class HumanMarkerPublisher(Node):
         self._pub_world  = self.create_publisher(MarkerArray, '/visualization/world',       10)
         self._pub_paths  = self.create_publisher(MarkerArray, '/visualization/human_paths', 10)
         self._pub_trail  = self.create_publisher(Path,        '/visualization/robot_trail', 10)
+        self._pub_gt     = self.create_publisher(PoseArray,   '/human_gt_poses',            10)
 
         self.create_timer(0.05, self._update_actors)   # 20 Hz
         self.create_timer(0.1,  self._publish)         # 10 Hz
@@ -643,6 +665,26 @@ class HumanMarkerPublisher(Node):
 
         self._pub_world.publish(arr)
         self._pub_paths.publish(pred)
+
+        # Ground-truth PoseArray (odom frame) — one pose per tracked human.
+        # Velocity is packed into orientation (not a real quaternion):
+        #   orientation.x = vx (m/s),  orientation.y = vy (m/s)
+        gt_arr = PoseArray()
+        gt_arr.header.frame_id = 'odom'
+        gt_arr.header.stamp    = stamp
+        for name in sorted(self._actor_color):
+            if name not in self._actor_pos:
+                continue
+            ox, oy = self._w2o(*self._actor_pos[name])
+            vx, vy = self._actor_vel.get(name, (0.0, 0.0))
+            p = Pose()
+            p.position.x    = ox
+            p.position.y    = oy
+            p.orientation.x = vx
+            p.orientation.y = vy
+            p.orientation.w = 1.0
+            gt_arr.poses.append(p)
+        self._pub_gt.publish(gt_arr)
 
     def _log(self) -> None:
         sim_t = self._sim_seconds()

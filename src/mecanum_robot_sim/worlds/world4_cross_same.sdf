@@ -108,7 +108,7 @@
         </collision>
       </link>
       <plugin filename="__waypoints__" name="waypoints">
-        <delay_start>1.0</delay_start>
+        <delay_start>3.0</delay_start>
         <loop>true</loop>
         <waypoint><time>0.0</time><pose>1.0 -8.0 0 0 0 1.5708</pose></waypoint>
         <waypoint><time>2.0</time><pose>1.0 -5.6 0 0 0 1.6008</pose></waypoint>
@@ -227,7 +227,7 @@
       </animation>
       <script>
         <loop>true</loop>
-        <delay_start>5.0</delay_start>
+        <delay_start>1.0</delay_start>
         <auto_start>true</auto_start>
         <trajectory id="0" type="walk">
         <waypoint><time>0.0</time><pose>-1.0 -8.0 1.0 0 0 1.5708</pose></waypoint>

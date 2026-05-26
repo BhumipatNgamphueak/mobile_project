@@ -18,6 +18,7 @@ Velocity is estimated by finite-differencing successive poses.
 import math
 import rclpy
 from rclpy.node import Node
+from rclpy.time import Time
 from geometry_msgs.msg import TransformStamped
 from nav_msgs.msg import Odometry
 from tf2_msgs.msg import TFMessage
@@ -43,6 +44,12 @@ class GzPoseOdom(Node):
         self._prev_y   = None
         self._prev_yaw = None
         self._prev_t   = None
+
+        # EMA low-pass filter state for velocity (alpha=0.4)
+        self._vel_alpha = 0.4
+        self._vx_f    = 0.0
+        self._vy_f    = 0.0
+        self._omega_f = 0.0
 
         self.create_subscription(TFMessage, '/gz_dynamic_poses', self._pose_cb, 10)
         self.get_logger().info(
@@ -70,25 +77,29 @@ class GzPoseOdom(Node):
         ox = wx - self._ox
         oy = wy - self._oy
 
-        now = self.get_clock().now()
-        stamp = now.to_msg()
+        # Use Gazebo message timestamp to avoid TF clock-skew under sim time.
+        now   = Time.from_msg(tf.header.stamp)
+        stamp = tf.header.stamp
 
-        # Velocity by finite difference
-        vx = vy = omega = 0.0
+        # Velocity by finite difference with EMA low-pass filter.
+        # Guard: skip if dt is outside sane range (sim pause or duplicate msg).
         if self._prev_t is not None:
             dt = (now - self._prev_t).nanoseconds * 1e-9
-            if dt > 0.0:
-                # World-frame delta → body-frame velocity
+            if 0.0 < dt < 0.5:
                 dx_w = ox - self._prev_x
                 dy_w = oy - self._prev_y
                 c = math.cos(yaw)
                 s = math.sin(yaw)
-                vx    = ( c * dx_w + s * dy_w) / dt
-                vy    = (-s * dx_w + c * dy_w) / dt
-                dyaw  = yaw - self._prev_yaw
-                # Wrap to [-π, π]
-                dyaw  = math.atan2(math.sin(dyaw), math.cos(dyaw))
-                omega = dyaw / dt
+                vx_raw    = ( c * dx_w + s * dy_w) / dt
+                vy_raw    = (-s * dx_w + c * dy_w) / dt
+                dyaw      = math.atan2(math.sin(yaw - self._prev_yaw),
+                                       math.cos(yaw - self._prev_yaw))
+                omega_raw = dyaw / dt
+                a = self._vel_alpha
+                self._vx_f    = a * vx_raw    + (1.0 - a) * self._vx_f
+                self._vy_f    = a * vy_raw    + (1.0 - a) * self._vy_f
+                self._omega_f = a * omega_raw + (1.0 - a) * self._omega_f
+        vx, vy, omega = self._vx_f, self._vy_f, self._omega_f
 
         self._prev_x   = ox
         self._prev_y   = oy

@@ -88,29 +88,29 @@
       </link>
     </model>
 
-    <!-- Obstacle A: embedded 2 m into north wall at x=-3
-         1×15×2 m: centre y=4.5 → spans y=-3 … 12 (2 m past wall centre, no gap) -->
+    <!-- Obstacle A: from north wall at x=-3
+         1×7×2 m: centre y=6.0 → spans y=2.5 … 9.5 -->
     <model name="obstacle_A">
       <static>true</static>
-      <pose>-3 4.5 1 0 0 0</pose>
+      <pose>-2 6.0 1 0 0 0</pose>
       <link name="link">
-        <collision name="col"><geometry><box><size>1 15 2</size></box></geometry></collision>
+        <collision name="col"><geometry><box><size>1 7 2</size></box></geometry></collision>
         <visual name="vis">
-          <geometry><box><size>1 15 2</size></box></geometry>
+          <geometry><box><size>1 7 2</size></box></geometry>
           <material><ambient>0.8 0.2 0.2 1</ambient><diffuse>0.8 0.2 0.2 1</diffuse></material>
         </visual>
       </link>
     </model>
 
-    <!-- Obstacle B: embedded 2 m into south wall at x=3
-         1×15×2 m: centre y=-4.5 → spans y=-12 … 3 (2 m past wall centre, no gap) -->
+    <!-- Obstacle B: from south wall at x=3
+         1×7×2 m: centre y=-6.0 → spans y=-9.5 … -2.5 -->
     <model name="obstacle_B">
       <static>true</static>
-      <pose>3 -4.5 1 0 0 0</pose>
+      <pose>4 -6.0 1 0 0 0</pose>
       <link name="link">
-        <collision name="col"><geometry><box><size>1 15 2</size></box></geometry></collision>
+        <collision name="col"><geometry><box><size>1 20 2</size></box></geometry></collision>
         <visual name="vis">
-          <geometry><box><size>1 15 2</size></box></geometry>
+          <geometry><box><size>1 20 2</size></box></geometry>
           <material><ambient>0.2 0.4 0.8 1</ambient><diffuse>0.2 0.4 0.8 1</diffuse></material>
         </visual>
       </link>

@@ -79,7 +79,7 @@ class GlobalPathNode(Node):
             return
 
         self.path_pub.publish(self.goal_msg)
-        self.get_logger().info(f"Published straight-line global path with {len(self.goal_msg.poses)} waypoints.")
+        self.get_logger().debug(f"Published straight-line global path with {len(self.goal_msg.poses)} waypoints.")
         
 def main(args=None):
     rclpy.init(args=args)

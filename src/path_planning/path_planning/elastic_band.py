@@ -256,7 +256,7 @@ class ElasticBandPlanner:
             return xs, ys
 
         self._apply_warm_start(xs, ys)
-        self._preroute(xs, ys, polygons)
+        # self._preroute(xs, ys, polygons)
         self._gradient_descent(xs, ys, polygons)
 
         self._warm_xs = xs[:]
@@ -371,50 +371,53 @@ class ElasticBandPlanner:
         if n < 3:
             return
 
-        for poly in polygons:
-            if len(poly) < 3:
-                continue
+        # Two passes: first pass may displace nodes into a neighbouring polygon;
+        # second pass catches those newly-colliding nodes.
+        for _ in range(2):
+            for poly in polygons:
+                if len(poly) < 3:
+                    continue
 
-            inside_idx = []
-            for i in range(1, n - 1):
-                _, _, _, inside = point_polygon_signed_dist(xs[i], ys[i], poly)
-                if inside:
-                    inside_idx.append(i)
-            if not inside_idx:
-                continue
+                inside_idx = []
+                for i in range(1, n - 1):
+                    _, _, _, inside = point_polygon_signed_dist(xs[i], ys[i], poly)
+                    if inside:
+                        inside_idx.append(i)
+                if not inside_idx:
+                    continue
 
-            i_first = inside_idx[0]
-            i_last  = inside_idx[-1]
-            i_pre   = max(0,     i_first - 1)
-            i_post  = min(n - 1, i_last  + 1)
+                i_first = inside_idx[0]
+                i_last  = inside_idx[-1]
+                i_pre   = max(0,     i_first - 1)
+                i_post  = min(n - 1, i_last  + 1)
 
-            bx = xs[i_post] - xs[i_pre]
-            by = ys[i_post] - ys[i_pre]
-            bm = math.hypot(bx, by)
-            if bm < 1e-6:
-                continue
-            bx, by = bx / bm, by / bm
+                bx = xs[i_post] - xs[i_pre]
+                by = ys[i_post] - ys[i_pre]
+                bm = math.hypot(bx, by)
+                if bm < 1e-6:
+                    continue
+                bx, by = bx / bm, by / bm
 
-            cxr = (xs[i_first] + xs[i_last]) / 2.0
-            cyr = (ys[i_first] + ys[i_last]) / 2.0
+                cxr = (xs[i_first] + xs[i_last]) / 2.0
+                cyr = (ys[i_first] + ys[i_last]) / 2.0
 
-            max_left  = 0.0
-            max_right = 0.0
-            for vx, vy in poly:
-                d_left  = (vx - cxr) * (-by) + (vy - cyr) * bx
-                d_right = (vx - cxr) * by   + (vy - cyr) * (-bx)
-                if d_left  > max_left:  max_left  = d_left
-                if d_right > max_right: max_right = d_right
+                max_left  = 0.0
+                max_right = 0.0
+                for vx, vy in poly:
+                    d_left  = (vx - cxr) * (-by) + (vy - cyr) * bx
+                    d_right = (vx - cxr) * by    + (vy - cyr) * (-bx)
+                    if d_left  > max_left:  max_left  = d_left
+                    if d_right > max_right: max_right = d_right
 
-            if max_left <= max_right:
-                perp_x, perp_y, extent = -by, bx, max_left
-            else:
-                perp_x, perp_y, extent =  by, -bx, max_right
+                if max_left <= max_right:
+                    perp_x, perp_y, extent = -by, bx, max_left
+                else:
+                    perp_x, perp_y, extent =  by, -bx, max_right
 
-            offset = extent + self.cfg.inflation + 0.1
-            for i in inside_idx:
-                xs[i] += offset * perp_x
-                ys[i] += offset * perp_y
+                offset = extent + self.cfg.inflation + 0.1
+                for i in inside_idx:
+                    xs[i] += offset * perp_x
+                    ys[i] += offset * perp_y
 
     # ── gradient descent ────────────────────────────────────────────────
 
