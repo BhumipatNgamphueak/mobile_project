@@ -1,2 +1,0 @@
-world,goal_x,goal_y,start_x,start_y,straight_line_m,path_length_m,travel_time_s,final_pos_error_m,goal_reached
-world4_cross_same,15.0000,0.0000,0.0000,0.0000,15.0000,15.3122,13.54,0.3914,1

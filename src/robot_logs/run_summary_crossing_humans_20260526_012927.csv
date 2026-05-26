@@ -1,4 +1,0 @@
-world,goal_x,goal_y,start_x,start_y,straight_line_m,path_length_m,travel_time_s,final_pos_error_m,goal_reached
-crossing_humans,7.0000,0.0000,0.0000,0.0000,7.0000,6.9703,8.96,0.3723,1
-crossing_humans,9.2714,1.6000,6.6545,0.0802,3.0262,2.6642,2.71,0.3681,1
-crossing_humans,11.6714,0.5429,8.9646,1.4223,2.8461,3.3245,3.34,0.3842,1

@@ -111,27 +111,163 @@ The optimiser ([path_planning/elastic_band.py](src/path_planning/path_planning/e
 
 ---
 
-## 4. Results
+## 4. Experiments & Results
 
-Detailed perception logs are recorded by `social_costmap_node` into CSV files under `~/robot_logs/`. The scripts in [analysis/](analysis/) post-process those logs and produce the figures below.
+All navigation logs are recorded to `src/robot_logs/`. Perception logs are recorded by `social_costmap_node` to `~/robot_logs/`. Analysis scripts live at the repo root (`analyze_*.py`) and write PNG figures alongside them.
 
-### 4.1 Perception summary — [analysis/perception_summary.png](analysis/perception_summary.png)
+> **Video summary:** [`experiment_summary.mp4`](experiment_summary.mp4) — animated overview of all three parts below.
 
-![perception_summary](analysis/perception_summary.png)
+---
 
-Aggregate detection rate, position error, and speed error across all `world_perc_stand` and `world_perc_walk` runs, binned by ground-truth range (1, 3, 5, 7 m). Detection rate degrades at the FOV edges and beyond 5 m; speed estimates require the GMM-style track window to fill before they stabilise (warm-up tail visible at the start of each crossing).
+### 4.1 Part 1 — Elastic Band (LiDAR only, ground-truth human reference)
 
-### 4.2 Walking-human deep-dive — [analysis/walk_analysis.png](analysis/walk_analysis.png)
+**Goal:** characterise planner quality before introducing the perception stack. Humans are present as physical obstacles (LiDAR sees them) but no YOLO/GMM is running.
 
-![walk_analysis](analysis/walk_analysis.png)
+**Experiment:** vary `lookahead_dist` (2 / 5 / 10 / 15 m) across three worlds (`world2` static two-obstacle corridor, `world3_cross_opposite` opposing human, `world4_cross_same` same-direction human) and record the robot path, minimum obstacle clearance, and replanning latency.
 
-Six-panel analysis of Case B (perpendicular walking human): bird-eye hit/miss map, detection rate vs. boresight angle, expected-in-FOV vs. detected, bias vectors of estimated position relative to ground truth, position-error vs. lateral y, and speed estimation along the crossing. The bias vectors reveal a systematic forward-bias at far range from the bbox-height monocular depth fallback.
+![lookahead_tuning](lookahead_tuning.png)
 
-### 4.3 FOV-angle sensitivity — [analysis/angle_error.png](analysis/angle_error.png)
+| Lookahead | Path quality | Safety | Replan time |
+|-----------|-------------|--------|-------------|
+| 2 m | Highly reactive — tight zigzags near obstacles | Gets closest to obstacles | ~20–30 ms |
+| 5 m | Smooth detour, best balance | Consistent clearance > 1 m | ~40–50 ms |
+| 10 m | Slightly over-smooth, small overshoot | Safe | ~60–80 ms |
+| 15 m | Smoothest curve overall | Safe | ~100–150 ms |
 
-![angle_error](analysis/angle_error.png)
+**Finding:** `lookahead_dist = 5 m` is the best operating point — smooth enough to navigate without oscillation, fast enough to replan at 10 Hz.
 
-Position error as a function of angle from the camera boresight, binned by range. Error is lowest at 0° and rises toward the ±30° edges of the FOV — consistent with monocular depth degradation off-axis and LiDAR-bearing quantisation.
+#### Videos — world2 (static two-obstacle corridor)
+
+| Lookahead | Video |
+|-----------|-------|
+| 2 m | [world2_look_2.webm](videos/world2/world2_look_2.webm) |
+| 5 m | [world2_look_5.webm](videos/world2/world2_look_5.webm) |
+| 10 m | [world2_look_10.webm](videos/world2/world2_look_10.webm) |
+| 15 m | [world2_look_15.webm](videos/world2/world2_look_15.webm) |
+| 5 m (no pre-route) | [world2_no_preroute_look5.webm](videos/world2/world2_no_preroute_look5.webm) |
+
+#### Videos — world3 (crossing human, look=5 m, with/without delay)
+
+| Variant | Video |
+|---------|-------|
+| No social costmap, look=5 | [world3_no_egg_look5.webm](videos/world3/world3_no_egg_look5.webm) |
+| With humans delayed 6 s, look=2 | [w3__delay6_look2.webm](videos/world3/w3__delay6_look2.webm) |
+| With humans delayed 6 s, look=5 | [w3__delay6_look5.webm](videos/world3/w3__delay6_look5.webm) |
+| With humans delayed 6 s, look=10 | [w3__delay6_look10.webm](videos/world3/w3__delay6_look10.webm) |
+
+#### Videos — world4 (same-direction human)
+
+| Lookahead | Video |
+|-----------|-------|
+| 2 m | [world4_look2.webm](videos/world4/world4_look2.webm) |
+| 5 m | [world4_look5.webm](videos/world4/world4_look5.webm) |
+| 10 m | [world4_look10.webm](videos/world4/world4_look10.webm) |
+
+---
+
+### 4.2 Part 2 — Perception Tests (GMM accuracy)
+
+Robot is stationary (`auto_goal:=false`). Only the YOLO + GMM pipeline runs. Ground-truth positions are logged from `human_marker_publisher` and compared to the GMM estimate in `social_costmap_node`.
+
+#### 4.2.1 Case A — Standing Human
+
+Human stands at world `(-4, 0)` directly in front of the camera. Robot distance varied by `spawn_x` (1 / 3 / 5 / 7 / 9 m camera-to-human range).
+
+| Range | Detection rate | Mean position error |
+|-------|---------------|---------------------|
+| 1 m | 39% | 0.32 m |
+| 3 m | **100%** | 0.31 m |
+| 5 m | **100%** | 0.31 m |
+| 7 m | **100%** | 0.32 m |
+| 9 m | 0% | — |
+
+**Finding:** The system detects reliably at 3–7 m with a **constant ~0.31 m systematic overestimate** in range — a known bias of the bbox-height monocular depth fallback. Fails at 1 m (human fills too much of the frame) and 9 m (human is too small for YOLOv8-nano to classify).
+
+#### 4.2.2 Case B — Walking Human (perpendicular crossing)
+
+Human walks north–south at fixed `world x = -4` across the 60° FOV. Robot distance varied by `spawn_x` (1 / 3 / 5 / 7 / 9 m). Key insight: low overall detection rate is **not** a YOLO failure — it reflects how briefly the human is geometrically inside the 60° cone.
+
+![walk_analysis](walk_analysis.png)
+
+| Range | Time in FOV | YOLO-within-FOV | Overall det% | Pos error | Speed error |
+|-------|------------|-----------------|-------------|-----------|-------------|
+| 1 m | 9% | 80% | 9% | 0.43 m | 1.20 m/s |
+| 3 m | 26% | 77% | 19% | 0.53 m | 0.51 m/s |
+| 5 m | 41% | 71% | 32% | 0.75 m | 0.36 m/s |
+| 7 m | 55% | **78%** | 43% | 0.60 m | 0.34 m/s |
+| 9 m | 79% | 0% | 0% | — | — |
+
+**Position error vs viewing angle** (hypothesis confirmed at all ranges):
+
+![angle_error](angle_error.png)
+
+Error is lowest at 0° (human directly ahead, bbox most stable) and rises toward ±30° (human foreshortened at oblique angles, monocular depth degrades). The increase is 0.29–0.43 m from centre to edge at 1–7 m range.
+
+**Speed estimation:** GMM velocity warms up after ~3 detections. At 1 m the human crosses the FOV too quickly for the tracker to fill its 1.5-s window → speed estimate stays 0. At 5–7 m the tracker stabilises and estimates speed within 0.34–0.36 m/s of ground truth (1.2 m/s).
+
+---
+
+### 4.3 Part 3 — Integration (Elastic Band + GMM social costmap)
+
+**Goal:** full closed-loop navigation with YOLO/GMM providing dynamic human obstacles to the elastic-band planner via `/local_costmap_social`.
+
+![nav_overview](nav_overview.png)
+![social_costmap_effect](social_costmap_effect.png)
+
+| World | Goal success | Notes |
+|-------|-------------|-------|
+| `crossing_humans` | 56% | Two crossing humans; planner often succeeds but occasional failures |
+| `world3_cross_opposite` | 67% | One opposing human |
+| `world4_cross_same` | 100% | One same-direction human |
+
+The GMM egg raises minimum obstacle clearance (robot avoids humans earlier) and reduces robot speed near humans — demonstrating correct social-cost integration. However, in `world4` the egg over-inflates and causes the robot to take a very long detour (~300 s vs ~25 s without egg). The `peak_cost` and σ parameters need world-specific tuning.
+
+#### Videos — social costmap effect (with vs without GMM egg)
+
+| World | Without egg | With egg |
+|-------|------------|---------|
+| world3 | [world3_no_egg_look5.webm](videos/world3/world3_no_egg_look5.webm) | [world3_egg_look5.webm](videos/world3/world3_egg_look5.webm) |
+| world4 | [world4_look5.webm](videos/world4/world4_look5.webm) | [world4_egg_look5.webm](videos/world4/world4_egg_look5.webm) |
+
+#### 4.3.1 Failure Analysis — Why the integration fails at close range
+
+**Observed failure mode:** when the robot approaches to within ~1–2 m of a human, the GMM tracker loses the detection and the social cost vanishes from the costmap. The elastic-band planner then replans through the now-empty space directly toward the goal — into the human's path — causing either a collision or an oscillating stall.
+
+**Root cause — camera height vs. human geometry:**
+
+```
+Our robot   Paper robots (e.g. hotel service)
+──────────  ─────────────────────────────────
+Camera at   Camera at ~1.4–1.6 m (chest/face)
+  ~1.0 m
+  (low)
+  
+At 1–2 m range:              At 1–2 m range:
+  Camera sees legs only        Camera still sees torso/face
+  YOLO person class fails      YOLO detects reliably
+  GMM track lost               GMM track maintained
+  No dynamic obstacle          Planner avoids correctly
+```
+
+The paper scenarios also use **narrow corridors (hotel hallway width ~2 m)**. Even when the robot begins an avoidance manoeuvre sideways, the human remains within the camera's FOV because there is nowhere wide enough to exit it. In our open-world simulation the robot swings wide enough that the human moves past the ±30° FOV edge — the detection vanishes precisely when the obstacle information is most needed.
+
+**Two compounding failure conditions:**
+
+1. **Vertical** — robot camera is too low to see above knee height at close range; paper uses a tall service robot with the camera at face level.
+2. **Horizontal** — our test environment is wide; when avoiding, the human exits the 60° FOV entirely; paper's narrow corridor keeps the human visible throughout the avoidance manoeuvre.
+
+**Potential fixes (future work):**
+
+- Mount camera higher, or tilt further down to keep the full body in frame at 1 m.
+- Widen the effective FOV (wide-angle lens or pan-tilt unit).
+- Fuse LiDAR clusters as a fallback human tracker when YOLO drops out — LiDAR sees a 0.35 m cylinder at any range regardless of height.
+- Use the last-known GMM position and velocity to coast the social cost forward for ~1 s even after detection is lost (the tracker already does 0.8 s coasting; extending it to 2 s would bridge the gap).
+
+---
+
+### 4.4 Perception summary across all cases
+
+![perception_summary](perception_summary.png)
 
 ---
 

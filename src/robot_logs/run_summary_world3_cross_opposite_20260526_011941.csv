@@ -1,2 +1,0 @@
-world,goal_x,goal_y,start_x,start_y,straight_line_m,path_length_m,travel_time_s,final_pos_error_m,goal_reached
-world3_cross_opposite,15.0000,0.0000,0.0000,0.0000,15.0000,15.9760,15.04,0.3839,1

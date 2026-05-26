@@ -1,1 +1,0 @@
-time_s,gt_id,gt_x,gt_y,gt_speed_mps,det_id,det_x,det_y,pos_error_m,det_speed_mps,n_gt,n_detected
