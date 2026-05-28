@@ -71,7 +71,7 @@ Global path ─► path_planning_node (MCCH + EB optimiser) ──► /cmd_vel
 <tr>
   <td align="center">
     <img src="./figures/system_arch.png" width="800" alt="World 3 path comparison across lookaheads">
-    <p><b>Figure W3.</b> World 3 (Cross Opposite, planner only) — recorded robot trajectories for L = 2, 5, 10 m. Larger lookaheads commit to a wider swerve (peak lateral offset grows from ~0.5 m at L = 2 to ~3.7 m at L = 10) and produce longer overall paths (15.1 → 17.0 → 18.2 m), because the band reacts to the second human earlier on the long-horizon plan.</p>
+    <p>System Architecture of Elastic Band Planner with Perception module.</p>
   </td>
 </tr>
 
