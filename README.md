@@ -109,6 +109,14 @@ F^{\text{obs}}_i \;=\;
 \end{cases}
 $$
 
+
+
+<div align="center">
+  <img src="./figures/eb_force.png" alt="Perception test scenarios" width="600">
+  <p><em>Elastic Band Force.</em></p>
+</div>
+
+
 Endpoints are fixed and `|Δx_i|` is clamped to `max_delta = 0.10 m/iter` so the band cannot teleport across narrow gaps. The band is anchored at the **actual robot pose** (not the closest global-path waypoint), otherwise the smoothness force would constantly drag the first node back into the obstacle whenever the robot deviates laterally.
 
 <!-- Code: [`elastic_band.py`](src/path_planning/path_planning/elastic_band.py) (optimiser) and [`path_planning_node.py`](src/path_planning/path_planning/path_planning_node.py) (ROS plumbing). -->
