@@ -17,8 +17,8 @@
    - [Multiple Convex Hull for Object Representation (MCCH)](#multiple-convex-hull-for-object-representation-mcch)
    - [Pre Routing](#pre-routing)
 4. [Human Detection](#4-human-detection)
-   - [Gaussian Mixture Model](#gaussian-mixture-model)
-   - [Per-Person Velocity Estimation](#per-person-velocity-estimation)
+   - [Per-Person Velocity & Orientation Estimation](#Per-Person=Velocity-&-Orientation-Estimation)
+   - [Asymmetric 2D Gaussian Model](#Asymmetric-2D-Gaussian-Model)
 6. [Experiment Design](#6-experiment-design)
    - [Perception](#perception)
    - [Planner and Integration](#planner-and-integration)
@@ -148,7 +148,7 @@ Gradient descent cannot escape a polygon that fully contains a band node — the
 
 This process works by determining the motion vectors, orientation, and average speed of each individual human in the global frame without relying on skeleton landmarks from the camera.
 
-**1.1 Tracking & Spatial-Temporal Delta Processing**
+**1. Tracking & Spatial-Temporal Delta Processing**
 
 In every frame where the camera frames the object using YOLO and calculates the 3D global coordinates $(w_x, w_y)$ via distance from the LiDAR scan, the system searches the memory history in self.human_history using the detection index ($person\_id$) to find the spatial and temporal differences:
 
@@ -160,7 +160,7 @@ Temporal Displacement:
 
 $$\Delta t = \frac{t_{now} - t_{prev}}{10^9} \quad \text{(units: seconds)}$$
 
-**1.2 Outlier Rejection & EMA Low-pass Filtering**
+**2. Outlier Rejection & EMA Low-pass Filtering**
 
 Frame-by-frame calculated velocity signals ($v_{instant} = \Delta d / \Delta t$) often have high jitter due to centimeter-level noise from LiDAR. Therefore, the system uses a three-stage filtering mechanism:
 
@@ -172,7 +172,7 @@ Exponential Moving Average (EMA): Filters low frequencies using historical data 
 
 $$v_{smooth} = (\alpha \cdot v_{prev\_smooth}) + ((1 - \alpha) \cdot v_{instant})$$
 
-**1.3 Velocity Thresholding & Zero-Velocity Latch**
+**3. Velocity Thresholding & Zero-Velocity Latch**
 
 To prevent the Social Zone area from shaking when a human stands still (but the sensor coordinates fluctuate), the code uses the following rules:
 
@@ -184,7 +184,7 @@ $$\theta = \text{atan2}(\Delta y, \Delta x)$$
 
 If the speed is detected to be below the threshold or the movement distance $\Delta d < 0.05 \text{ m}$, the system will immediately lock the value to use the same $Yaw$ angle from the previous frame. This prevents the shape rotating erratically when a person stands still.
 
-### Asymmetric 2D Gaussian Model (Social Costmap)
+### Asymmetric 2D Gaussian Model
 
 Once the coordinates $(w_x, w_y)$, turning angle ($\theta$), and average speed ($v_{smooth}$ are obtained, the system calculates the shape as an egg, which is expanded more towards the front than towards the back and sides. Therefore, the system uses an asymmetric 2D Gaussian Distribution model in the human's local frame coordinates as follows:
 
