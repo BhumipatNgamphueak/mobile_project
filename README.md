@@ -90,25 +90,24 @@ The EB planner has no concept of "human" — it only knows polygons. The integra
 The band is a chain of waypoints `x_i` connected by virtual springs. Each interior node is updated by gradient descent under two forces:
 
 $$
-\Delta x_i \;=\; \eta\,\bigl(\,w_{\text{obs}}\,F^{\text{obs}}_i \;+\; w_{\text{smooth}}\,F^{\text{smooth}}_i\,\bigr)
+\Delta x_i = \eta \bigl(\,w_{\text{obs}} F^{\text{obs}}_i + w_{\text{smooth}} F^{\text{smooth}}_i \bigr)
 $$
 
 - **Smoothness / contraction** — pulls each node toward the midpoint of its neighbours:
 
 $$
-F^{\text{smooth}}_i \;=\; \tfrac{1}{2}\bigl(x_{i-1}+x_{i+1}\bigr) \;-\; x_i
+F^{\text{smooth}}_i = \tfrac{1}{2}\bigl(x_{i-1}+x_{i+1}\bigr) - x_i
 $$
 
-- **Obstacle repulsion** — non-zero only inside an inflation radius `d_inf`, pointing away from the nearest polygon boundary point `p^*`:
+- **Obstacle repulsion** — non-zero only inside an inflation radius `d_inf`, pointing away from the nearest polygon boundary point $`p^*`$:
 
 $$
-F^{\text{obs}}_i \;=\;
+F^{\text{obs}}_i =
 \begin{cases}
-\bigl(d_{\text{inf}} - d_i\bigr)\,\dfrac{x_i - p^*}{\lVert x_i - p^*\rVert} & \text{if } 0 < d_i < d_{\text{inf}} \\[4pt]
+\bigl(d_{\text{inf}} - d_i\bigr) \dfrac{x_i - p^*}{\lVert x_i - p^*} & \text{if } 0 < d_i < d_{\text{inf}} \\[4pt]
 0 & \text{if } d_i \ge d_{\text{inf}}
 \end{cases}
 $$
-
 
 
 <div align="center">
