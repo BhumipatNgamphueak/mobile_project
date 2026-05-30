@@ -236,14 +236,14 @@ In effect the controller is *cruise at 1.5 m/s along the band direction, with th
 ### Perception
 
 **Goal of this experiment.**
-The perception module feeds the planner *one* signal: an asymmetric Gaussian ("egg") painted onto the local costmap at the estimated position of each human, oriented along the estimated velocity. Before we can trust that signal to deform the elastic band, we have to characterise it on its own. Two questions drive the design:
+This experiment isolates the **pure perception stack** — YOLOv8 detection + LiDAR depth refinement + per-person tracker — and measures whether the *upstream* signal that the downstream social costmap depends on is actually reliable. The egg-shaped Gaussian and the costmap fusion are explicitly **not** exercised here; they are evaluated as part of the integrated system in §7. Two questions drive the design:
 
-1. **Availability** — at a given range and motion, what fraction of cycles produces *any* detection? An undetected human leaves the planner blind.
-2. **Accuracy** — when a detection exists, how far is it from the true human pose? An egg that sits 1 m off the human is worse than no egg, because the planner is now confident about the wrong cell.
+1. **Availability** — at a given range and motion, what fraction of cycles produces *any* detection? An undetected human leaves the downstream planner blind.
+2. **Accuracy** — when a detection exists, how far is it from the true human pose? A detection that sits 1 m off the human will, downstream, paint a Gaussian on the wrong cells, so an upper-bound on detection error directly upper-bounds how safe the egg can ever be.
 
 To isolate these from the planner and from the robot's own motion, the **robot is stationary** throughout. A single human is spawned at a controlled range, swept over **{1, 3, 5, 7, 9} m**, and two motion conditions are tested at each range:
 
-1. **Case A — Standing human in front of the robot.** The human stands still directly in front of the robot. This isolates the *position* pipeline (YOLO box → monocular height depth → LiDAR refinement → world projection) from any motion. We expect a stationary detected position and a near-zero fitted speed; any non-zero speed here is the static-noise floor that the social costmap will paint as a (small) directional egg even when no one is moving.
+1. **Case A — Standing human in front of the robot.** The human stands still directly in front of the robot. This isolates the *position* pipeline (YOLO box → monocular height depth → LiDAR refinement → world projection) from any motion. We expect a stationary detected position and a near-zero fitted speed; any non-zero speed here is the static-noise floor of the velocity estimator.
 2. **Case B — Human walking laterally across the robot's FOV.** A simulated pedestrian walks at ~1.0 m/s perpendicular to the robot's heading at the chosen range. This stresses the *velocity* pipeline (OLS line fit over the trajectory buffer, latency compensation, ID stability) and reveals how often the human falls outside the 60° horizontal FOV during the run.
 
 <div align="center">
@@ -252,7 +252,7 @@ To isolate these from the planner and from the robot's own motion, the **robot i
 </div>
 
 **Setup configuration.**
-Both cases share the same sensing and tracking configuration, which is what gets shipped to the integrated system in Section 7:
+Only the YOLO detector, LiDAR depth refinement and per-person tracker are active. The egg / Gaussian-painting parameters (σ<sub>front</sub>, σ<sub>back</sub>, σ<sub>side</sub>, C<sub>peak</sub>, k<sub>v</sub>) are **not used** in this experiment — they belong to the social-costmap fusion step that runs downstream in the integrated system (their values are documented in [§7 — Egg parameters in use](#dynamic-obstacle-integrated-system)).
 
 | Group | Parameter | Value | Meaning |
 |---|---|---|---|
@@ -269,18 +269,13 @@ Both cases share the same sensing and tracking configuration, which is what gets
 | Tracker | history window | 1.5 s | Buffer used for the OLS velocity fit |
 | Tracker | min fit points | 5 | Below this the track keeps `v = 0` |
 | Tracker | min fit displacement | 0.20 m | First → last sample must travel this much |
-| Tracker | min reported speed | 0.15 m/s | Below this `yaw` is frozen, egg stays oriented |
+| Tracker | min reported speed | 0.15 m/s | Below this `yaw` is frozen |
 | Tracker | match radius | 1.5 m | World-frame distance for ID association |
 | Tracker | coast timeout | 0.8 s | Track survives this long without a fresh detection |
 | Tracker | EMA α (pos / vel) | 0.5 / 0.5 | Light smoothing on raw position and fitted velocity |
-| Egg | σ<sub>min</sub> (front) | 1.2 m | Idle forward lobe of a stationary human |
-| Egg | k<sub>v</sub> (velocity factor) | 0.6 s | Forward lobe grows by `k_v·\|v\|` |
-| Egg | σ<sub>back</sub> | 0.4 m | Rear lobe (always short) |
-| Egg | σ<sub>side</sub> | 0.5 m | Lateral half-width |
-| Egg | C<sub>peak</sub> | 85 (cost) | Peak cost written into the costmap |
 
 **Logging.**
-While each run is active, `social_costmap_node` writes one row per detection cycle to `~/robot_logs/perception_log_<world>_<stamp>.csv` with `(time_s, gt_id, gt_x, gt_y, gt_speed_mps, det_id, det_x, det_y, pos_error_m, det_speed_mps, n_gt, n_detected)`. The ground-truth pose comes from the simulator's `/human_gt_poses` topic, and detection-to-GT pairing inside the logger uses ascending-distance greedy matching so the same person is not double-counted. Each `(case, range)` combination is run for ~20 s, and the longest run per range is kept for analysis. The CSVs are then post-processed by [`analyze_perception_viz.py`](src/) to produce the figures in §7.
+The detector and tracker run inside `social_costmap_node` (the same node that *would* paint the egg in the integrated system), but for this experiment the costmap fusion is a no-op — we only read out the detection layer. One row per detection cycle is written to `~/robot_logs/perception_log_<world>_<stamp>.csv` with `(time_s, gt_id, gt_x, gt_y, gt_speed_mps, det_id, det_x, det_y, pos_error_m, det_speed_mps, n_gt, n_detected)`. The ground-truth pose comes from the simulator's `/human_gt_poses` topic, and detection-to-GT pairing inside the logger uses ascending-distance greedy matching so the same person is not double-counted. Each `(case, range)` combination is run for ~20 s, and the longest run per range is kept for analysis. The CSVs are then post-processed by [`analyze_perception_viz.py`](src/) to produce the figures in §7.
 
 
 ### Planner and Integration
@@ -304,7 +299,7 @@ We use three scenarios to test the planner: a **Static Obstacle** world for the 
 ### Perception
 
 **Headline numbers.**
-The two figures below summarise the entire perception sweep. Each subplot is one range; the green triangle / line is the simulator's ground truth, the red dots are the per-frame detected positions (latency-compensated to the current time, exactly as fed into the costmap), and the diamond in Case A is the mean detected position. The blue cone is the camera's 60° horizontal FOV. The numbers in the top-left of each subplot are the detection rate (fraction of cycles in which the human was matched to a track) and the mean position error in metres.
+The two figures below summarise the entire perception sweep. Each subplot is one range; the green triangle / line is the simulator's ground truth, the red dots are the per-frame detected positions (latency-compensated to the current time, exactly what the integrated system *would* feed into the social costmap), and the diamond in Case A is the mean detected position. The blue cone is the camera's 60° horizontal FOV. The numbers in the top-left of each subplot are the detection rate (fraction of cycles in which the human was matched to a track) and the mean position error in metres.
 
 <div align="center">
   <img src="./figures/perception_stand.png" alt="Case A — standing human, GT vs detected position" width="900">
@@ -350,7 +345,7 @@ The two figures below summarise the entire perception sweep. Each subplot is one
 **Result analysis.**
 
 *Case A — standing human.*
-- **3 m to 7 m is the sweet spot.** Detection rate is 100 % and the mean position error is essentially flat at ~0.31 m. The error is **systematic, not random**: in every subplot the red cluster sits at the same offset from the green triangle, roughly along the line of sight. This is the residual of the camera-to-`base_link` calibration (the 0.40 m forward offset plus the small ground-plane assumption made in `_pixel_range_to_world`); it is *not* noise. From the planner's point of view this is harmless — the egg is anchored 0.3 m past the human along the bearing, which still puts the lethal cells well inside the human's footprint.
+- **3 m to 7 m is the sweet spot.** Detection rate is 100 % and the mean position error is essentially flat at ~0.31 m. The error is **systematic, not random**: in every subplot the red cluster sits at the same offset from the green triangle, roughly along the line of sight. This is the residual of the camera-to-`base_link` calibration (the 0.40 m forward offset plus the small ground-plane assumption made in `_pixel_range_to_world`); it is *not* noise. For the downstream egg this is harmless — when the integrated system later paints a Gaussian at the detected position, the lethal cells still sit well inside the human's footprint despite the 0.3 m bias.
 - **At 1 m the detection rate collapses to 39 %.** This is the failure mode we already flagged in §8 of the discussion: at very close range the human's torso and head leave the camera's *vertical* FOV (camera is mounted at ~1.0 m above ground) and YOLO sees only the legs, which no longer match the "person" template at confidence ≥ 0.5. Note the position error is still 0.32 m — when a detection survives, it is just as accurate as the farther ranges. The problem is purely *availability*, not accuracy.
 - **At 9 m there is no detection at all.** The human's bounding box becomes too small for YOLOv8n to score above the 0.5 confidence threshold, and our hard `detection_range = 8 m` cap also kicks in. This bounds the useful operating range of the social costmap to ~7 m, which is consistent with the lookahead distances actually used by the planner (`L ≤ 10 m`, but only the nearest few metres matter for the immediate egg overlay).
 
