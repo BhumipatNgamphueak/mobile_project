@@ -408,15 +408,15 @@ The two figures below summarise the entire perception sweep. Each subplot is one
 <table>
   <tr>
     <td>
-      <video src="./videos/world2/world2_look_2.webm" width="100%" controls></video>
+      <a href="./videos/world2/world2_look_2.webm"><b>Click to watch video</b></a>
       <p align="center">World 2 — Static slalom, lookahead L = 2 m. Band horizon is too short; robot fails to detour past the first block.</p>
     </td>
     <td>
-      <video src="./videos/world2/world2_look_5.webm" width="100%" controls></video>
+      <a href="./videos/world2/world2_look_5.webm"><b>Click to watch video</b></a>
       <p align="center">World 2 — Static slalom, L = 5 m. Pre-routing + EB find a clean S-shape detour; goal reached at 16.9 m.</p>
     </td>
         <td>
-      <video src="./videos/world2/world2_look_10.webm" width="100%" controls></video>
+      <a href="./videos/world2/world2_look_10.webm"><b>Click to watch video</b></a>
       <p align="center">World 2 — Static slalom, L = 10 m. Longer horizon commits to the detour earlier; goal reached at 16.8 m.</p>
     </td>
   </tr>
@@ -425,11 +425,11 @@ The two figures below summarise the entire perception sweep. Each subplot is one
 <table>
   <tr>
     <td>
-      <video src="./videos/world2/world2_look_15.webm" width="100%" controls></video>
+      <a href="./videos/world2/world2_look_15.webm"><b>Click to watch video</b></a>
       <p align="center">World 2 — Static slalom, L = 15 m. Maximum tested lookahead; widest detour, goal reached at 17 m.</p>
     </td>
     <td>
-      <video src="./videos/world2/world2_no_preroute_look5.webm" width="100%" controls></video>
+      <a href="./videos/world2/world2_no_preroute_look5.webm"><b>Click to watch video</b></a>
       <p align="center">World 2 — Static slalom, L = 5 m, <b>pre-routing disabled</b>. Band stays pinned between the two polygons; robot fails to reach the goal (stops at ~10 m, see no_preroute row).</p>
     </td>
   </tr>
@@ -468,15 +468,15 @@ The two figures below summarise the entire perception sweep. Each subplot is one
 <table>
   <tr>
     <td>
-      <video src="./videos/world3/w3__delay6_look2.webm" width="100%" controls></video>
+      <a href="./videos/world3/w3__delay6_look2.webm"><b>Click to watch video</b></a>
       <p align="center">World C — Cross Opposite, L = 2 m. Minimal detour; robot brushes past both humans (path 15.1 m, ratio 1.01).</p>
     </td>
     <td>
-      <video src="./videos/world3/w3__delay6_look5.webm" width="100%" controls></video>
+      <a href="./videos/world3/w3__delay6_look5.webm"><b>Click to watch video</b></a>
       <p align="center">World C — Cross Opposite, L = 5 m. Visible swerve to +y; band briefly settles in the upper homotopy class (path 17 m).</p>
     </td>
         <td>
-      <video src="./videos/world3/w3__delay6_look10.webm" width="100%" controls></video>
+      <a href="./videos/world3/w3__delay6_look10.webm"><b>Click to watch video</b></a>
       <p align="center">World C — Cross Opposite, L = 10 m. Largest swerve (~3.7 m lateral); long horizon plans the detour earlier (path 18.2 m).</p>
     </td>
   </tr>
@@ -486,15 +486,15 @@ The two figures below summarise the entire perception sweep. Each subplot is one
 <table>
   <tr>
     <td>
-      <video src="./videos/world4/world4_look2.webm" width="100%" controls></video>
+      <a href="./videos/world4/world4_look2.webm"><b>Click to watch video</b></a>
       <p align="center">World D — Cross Same Direction, L = 2 m. Single small detour clears both humans (path 15.7 m, ratio 1.05).</p>
     </td>
     <td>
-      <video src="./videos/world4/world4_look5.webm" width="100%" controls></video>
+      <a href="./videos/world4/world4_look5.webm"><b>Click to watch video</b></a>
       <p align="center">World D — Cross Same Direction, L = 5 m. Wider swerve to the same side; path 16.5 m.</p>
     </td>
         <td>
-      <video src="./videos/world4/world4_look10.webm" width="100%" controls></video>
+      <a href="./videos/world4/world4_look10.webm"><b>Click to watch video</b></a>
       <p align="center">World D — Cross Same Direction, L = 10 m. Earliest commitment to detour; path 16.6 m.</p>
     </td>
   </tr>
@@ -505,15 +505,15 @@ The two figures below summarise the entire perception sweep. Each subplot is one
 <table>
   <tr>
     <td>
-      <video src="./videos/Toy_Exp1_look2.webm" width="100%" controls></video>
+      <a href="./videos/Toy_Exp1_look2.webm"><b>Click to watch video</b></a>
       <p align="center">Integrated GMM + EB planner in a free (obstacle-free) environment, L = 2 m. Short horizon — the path stays close to the straight line and only deforms when the egg enters the local window.</p>
     </td>
     <td>
-      <video src="./videos/Toy_Exp1_look_5.webm" width="100%" controls></video>
+      <a href="./videos/Toy_Exp1_look_5.webm"><b>Click to watch video</b></a>
       <p align="center">Integrated GMM + EB planner, L = 5 m. Smooth single-side detour around the human, driven by the asymmetric Gaussian.</p>
     </td>
         <td>
-      <video src="./videos/Toy_Exp1_look10.webm" width="100%" controls></video>
+      <a href="./videos/Toy_Exp1_look10.webm"><b>Click to watch video</b></a>
       <p align="center">Integrated GMM + EB planner, L = 10 m. Long horizon makes the detour start much earlier and overshoots laterally — the path becomes visibly less efficient.</p>
     </td>
   </tr>
@@ -585,21 +585,22 @@ detection_range = 8.0           # m hard cap
 
 At a 1.2 m/s human, `σ_front = 1.2 + 0.6·1.2 = 1.92 m` — i.e. the lethal forward lobe of each egg is ~2 m long. That length, plus the rounded sides, is what makes the difference visible in the path-length numbers below.
 
-##### Result plots
+##### Result recordings
 
-Because of an Ignition screen-capture issue the in-simulator videos for these L = 5 m runs were unusable. We instead reconstruct each run from the logs and plot it offline: the robot trajectory comes from `path_planning_node`'s CSV (`time_s, x, y, yaw, vx, vy, ω, …`), and the human ground-truth trajectory is interpolated from the SDF actor waypoints against the run's sim time (Ignition Fortress does not publish actor poses on `/pose/info`, so the SDF is the source of truth — see the project memory). The reconstruction is reproducible: see [`analyze_integration.py`](analyze_integration.py).
+The two L = 5 m integrated runs were recorded in-simulator; the path-length and clearance numbers come from the CSV logs and are reported together in the *Result numbers* table and *Figure GMM* below.
 
-<div align="center">
-  <img src="./figures/integration_world3.png" alt="World C — robot vs human GT trajectories" width="700">
-  <p><em><b>Figure I-C — World C (Cross Opposite, L = 5 m).</b> Solid blue = baseline robot path (LiDAR-only costmap); dashed red = integrated path (LiDAR + GMM). Dotted grey lines are the two humans' full GT trajectories during the run; large grey circles outlined in blue/red mark each human's <b>position at the moment of closest approach</b> in the respective run, and the small boxed number on the connecting line is that closest-approach distance in metres. Numbers in the bottom-left summarise final path length and minimum robot-human distance per run.</em></p>
-  <p><a href="https://drive.google.com/file/d/1LFt5x1_SnzOqKb-5BmGkbr29_Vwer_SZ/view?usp=sharing"><b>Click to watch the in-simulator recording (Google Drive)</b></a></p>
-</div>
-
-<div align="center">
-  <img src="./figures/integration_world4.png" alt="World D — robot vs human GT trajectories" width="700">
-  <p><em><b>Figure I-D — World D (Cross Same Direction, L = 5 m).</b> Same layout as Figure I-C. Both humans walk in the same direction, so their forward lobes merge into a single cost ridge — visible as a single positive-y swerve in both the baseline and integrated paths.</em></p>
-  <p><a href="https://drive.google.com/file/d/1JOxNYZfcf0W5iiaS-DpbTLDISs_LGdpy/view?usp=sharing"><b>Click to watch the in-simulator recording (Google Drive)</b></a></p>
-</div>
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <a href="https://drive.google.com/file/d/1LFt5x1_SnzOqKb-5BmGkbr29_Vwer_SZ/view?usp=sharing"><b>Click to watch the World C run (Google Drive)</b></a>
+      <p><em><b>World C — Cross Opposite, L = 5 m.</b> Integrated GMM + EB. Egg-shaped social zones are rendered around each detected human in real time as the robot reacts to H1.</em></p>
+    </td>
+    <td align="center" width="50%">
+      <a href="https://drive.google.com/file/d/1JOxNYZfcf0W5iiaS-DpbTLDISs_LGdpy/view?usp=sharing"><b>Click to watch the World D run (Google Drive)</b></a>
+      <p><em><b>World D — Cross Same Direction, L = 5 m.</b> Integrated GMM + EB. Both humans share the same heading; the two forward lobes merge into a single cost ridge that the band rounds in one sideways step.</em></p>
+    </td>
+  </tr>
+</table>
 
 ##### Result numbers
 
@@ -619,7 +620,7 @@ All values measured directly from the CSV logs (robot path from `path_planning_n
 
 ##### Result analysis
 
-- **The egg shortens the path in both worlds (−1.06 m in World C, −1.17 m in World D).** Mechanism: the directional Gaussian is painted *before* the human is at the robot's level, so the band starts deforming several seconds early and commits to a single short sideways step rather than the late wide swerve the LiDAR-only baseline is forced into. In Figure I-D the same-direction humans' forward lobes merge into a single cost ridge, so the band rounds one obstacle instead of two and the saving is slightly larger.
+- **The egg shortens the path in both worlds (−1.06 m in World C, −1.17 m in World D).** Mechanism: the directional Gaussian is painted *before* the human is at the robot's level, so the band starts deforming several seconds early and commits to a single short sideways step rather than the late wide swerve the LiDAR-only baseline is forced into. In World D the same-direction humans' forward lobes merge into a single cost ridge (visible in the right-hand panel of Figure GMM), so the band rounds one obstacle instead of two and the saving is slightly larger.
 - **World C — the egg *causes* the grazing collision it was meant to prevent.** This is the most important finding from the plots. The baseline run (blue, 17.05 m) over-corrects to +y ≈ +2.5 m and clears H1 by 1.08 m. The integrated run (red, 15.99 m) commits to a tighter detour through y ≈ −1.7 m and arrives at x = +2 (H1's lane) at almost the same instant H1 is crossing y ≈ 0 northward — **min distance 0.46 m**, well below the 0.5 m threshold. The egg's job (deform earlier, take a shorter path) succeeded; the shorter path put the robot on a collision course because the speed and avoidance side were not co-optimised against the human's predicted future position.
 - **World D — the egg works as intended.** Both runs clear (baseline 1.54 m, integrated 1.07 m). The integrated path is shorter *and* safer-in-spirit (commits to the same homotopy class earlier, no late panic swerve). The min-distance is lower than baseline only because the integrated path is geometrically tighter — but still well above 0.5 m.
 - **Why World C and not World D — relative velocity.** World C is a head-on encounter, closing rate ≈ 2.7 m/s along the lateral axis; H1 transits the robot's path in ≈ 1.5 s. The egg's forward lobe (`σ_front = 1.92 m` at 1.2 m/s) is consumed in roughly that same time, so any latency in the perception pipeline (~0.3 s detection + up to 0.8 s coast on a miss) eats more than half the planning margin. In World D the parallel humans give a relative speed of ≈ 1.9 m/s and an interaction window twice as long, leaving plenty of slack for the egg + band to converge.
