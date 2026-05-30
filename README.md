@@ -99,12 +99,12 @@ $$
 F^{\text{smooth}}_i = \tfrac{1}{2}\bigl(x_{i-1}+x_{i+1}\bigr) - x_i
 $$
 
-- **Obstacle repulsion** — non-zero only inside an inflation radius `d_inf`, pointing away from the nearest polygon boundary point $`p^*`$:
+- **Obstacle repulsion** — non-zero only inside an inflation radius `d_safe`, pointing away from the nearest polygon boundary point $`c`$:
 
 $$
 F^{\text{obs}}_i =
 \begin{cases}
-\bigl(d_{\text{inf}} - d_i\bigr) \dfrac{x_i - p^*}{\lVert x_i - p^*} & \text{if } 0 < d_i < d_{\text{inf}} \\[4pt]
+\bigl(d_{\text{safe}} - d_i\bigr) \dfrac{x_i - c}{\lVert x_i - c \lVert} & \text{if } 0 < d_i < d_{\text{inf}} \\
 0 & \text{if } d_i \ge d_{\text{inf}}
 \end{cases}
 $$
