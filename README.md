@@ -144,59 +144,60 @@ Gradient descent cannot escape a polygon that fully contains a band node — the
 
 ## 4. Human Detection
 
-<!-- [`social_costmap_node.py`](src/human_detection/human_detection/social_costmap_node.py) turns camera + LiDAR into an asymmetric Gaussian social cost that is fused into the local costmap. Pipeline per frame:
+### Per-Person Velocity & Orientation Estimation
 
-1. **Detect** people with YOLOv8n on the front RGB camera (640 × 480, 60° HFOV). Boxes within 8 px of the image border are rejected (bearing is biased when the person is half out of frame).
-2. **Recover depth** by combining a monocular height prior with a LiDAR range:
+This process works by determining the motion vectors, orientation, and average speed of each individual human in the global frame without relying on skeleton landmarks from the camera.
 
-$$
-d_{\text{mono}} \;=\; \frac{f_x \cdot 1.7}{h_{\text{bbox}}}, \qquad
-d \;=\; \text{mean}\bigl\{r_k \in \text{LiDAR window} : |r_k - d_{\text{mono}}| \le \text{tol}\bigr\}
-$$
+**1.1 Tracking & Spatial-Temporal Delta Processing**
 
-with `tol = max(1 m, 0.3 · d_mono)`. The monocular prior anchors *which* return is the human, so the LiDAR cannot accidentally lock onto the back wall.
+In every frame where the camera frames the object using YOLO and calculates the 3D global coordinates $(w_x, w_y)$ via distance from the LiDAR scan, the system searches the memory history in self.human_history using the detection index ($person\_id$) to find the spatial and temporal differences:
 
-3. **Project** to the `odom` frame with the pinhole model (`depth = d · cos θ`, `lateral = d · sin θ`), correcting for the camera's 0.40 m forward offset from `base_link`.
-4. **Track and estimate velocity** with a per-person `PersonTracker` (see [Per-Person Velocity Estimation](#per-person-velocity-estimation)).
-5. **Render** an asymmetric Gaussian around each tracked person and merge it into `/local_costmap_social`. -->
+Spatial Displacement:
 
-### Gaussian Mixture Model
+$$\Delta d = \sqrt{(w_x - w_{prev\_x})^2 + (w_y - w_{prev\_y})^2}$$
 
-<!-- Each human is rendered as a single 2-D Gaussian **oriented along its velocity vector** and **asymmetric front-to-back**. In the human-local frame `(r_x, r_y)`:
+Temporal Displacement:
 
-$$
-\text{cost}(r_x, r_y) \;=\; C_{\text{peak}} \cdot \exp\!\left(-\,\frac{r_x^{2}}{\sigma_x^{2}} \;-\; \frac{r_y^{2}}{\sigma_y^{2}}\right)
-$$
+$$\Delta t = \frac{t_{now} - t_{prev}}{10^9} \quad \text{(units: seconds)}$$
 
-$$
-\sigma_x \;=\;
-\begin{cases}
-\sigma_{\text{front}} \;=\; \sigma_{\min} + k_v\,\lVert v\rVert & r_x > 0 \;(\text{ahead}) \\
-\sigma_{\text{back}} & r_x \le 0 \;(\text{behind})
-\end{cases}
-\qquad
-\sigma_y \;=\; \sigma_{\text{side}}
-$$
+**1.2 Outlier Rejection & EMA Low-pass Filtering**
 
-with `σ_min = 1.2 m`, `k_v = 0.6 s`, `σ_back = 0.4 m`, `σ_side = 0.5 m`, `C_peak = 85`. The forward lobe stretches with speed; the rear lobe stays compact. The planner then sees a longer forbidden zone ahead of a fast walker than ahead of a stationary one, with **zero changes** to the EB repulsion code.
+Frame-by-frame calculated velocity signals ($v_{instant} = \Delta d / \Delta t$) often have high jitter due to centimeter-level noise from LiDAR. Therefore, the system uses a three-stage filtering mechanism:
 
-> **Naming note.** We call this module **GMM** following the project's terminology, but strictly it is *one* asymmetric Gaussian per human, not a probabilistic mixture model. -->
+Time Gate: Calculated only when $0.0 < \Delta t < 1.0$ seconds to prevent jumps in case of frame drops.
 
-### Per-Person Velocity Estimation
+Hard Clipping: Limits the absolute maximum speed of a human to $2.0 \text{ m/s}$.
 
-<!-- Frame-to-frame `atan2` deltas are too noisy: at 30 fps a 1.2 m/s walker moves ~0.04 m per frame while LiDAR/bbox jitter is ~±0.02 m, giving 20–30° of random direction error → the egg visibly spins. Instead, each tracker keeps the last ~1.5 s of `(t, x, y)` samples and fits an OLS line:
+Exponential Moving Average (EMA): Filters low frequencies using historical data for smoothness, weighting the original velocity up to 80% ($\alpha = 0.8$).
 
-$$
-v_x \;=\; \frac{\sum_k (t_k - \bar t)(x_k - \bar x)}{\sum_k (t_k - \bar t)^{2}}, \qquad
-v_y \;=\; \frac{\sum_k (t_k - \bar t)(y_k - \bar y)}{\sum_k (t_k - \bar t)^{2}}, \qquad
-\psi \;=\; \operatorname{atan2}(v_y, v_x)
-$$
+$$v_{smooth} = (\alpha \cdot v_{prev\_smooth}) + ((1 - \alpha) \cdot v_{instant})$$
 
-Every sample contributes, so a single bad frame is averaged out instead of flipping the heading.
+**1.3 Velocity Thresholding & Zero-Velocity Latch**
 
-Two extra details that mattered in practice:
-- **Stable IDs.** Detections are matched against each track's constant-velocity prediction at `t_now`, with all candidate pairs resolved in **ascending-distance order** (globally greedy). This stops IDs from swapping when two people cross.
-- **Latency compensation.** YOLO-on-CPU + queue latency is 100–300 ms, so tracks are stamped with the *image-capture* time and the egg is drawn at the predicted pose at `t_now`. Missed detections coast on velocity for up to 0.8 s instead of being deleted, which prevents the egg from blinking out during brief YOLO dropouts. -->
+To prevent the Social Zone area from shaking when a human stands still (but the sensor coordinates fluctuate), the code uses the following rules:
+
+If $v_{smooth} < 0.1 \text{ m/s}$, force $v_{smooth} = 0.0 \text{ m/s}$.
+
+Movement Orientation ($Yaw$) is calculated using:
+
+$$\theta = \text{atan2}(\Delta y, \Delta x)$$
+
+If the speed is detected to be below the threshold or the movement distance $\Delta d < 0.05 \text{ m}$, the system will immediately lock the value to use the same $Yaw$ angle from the previous frame. This prevents the shape rotating erratically when a person stands still.
+
+### Asymmetric 2D Gaussian Model (Social Costmap)
+
+Once the coordinates $(w_x, w_y)$, turning angle ($\theta$), and average speed ($v_{smooth}$ are obtained, the system calculates the shape as an egg, which is expanded more towards the front than towards the back and sides. Therefore, the system uses an asymmetric 2D Gaussian Distribution model in the human's local frame coordinates as follows:
+
+$$f(r_x, r_y) = \exp \left( -\left( \frac{r_x^2}{2\sigma_x^2} + \frac{r_y^2}{2\sigma_y^2} \right) \right)$$
+
+The asymmetry of this model is controlled by piecewise parameterization, which involves separating the standard deviation function ($\sigma_x$) in the movement axis ($x_{\text{local}}$) into two distinct sides based on the coordinate signs. To modify the slope to be uneven:
+
+$$\sigma_x = \begin{cases} 
+\sigma_{front} & \text{if } r_x > 0 \quad \text{(Area of ​​the front hemisphere)} \\ 
+\sigma_{back} & \text{if } r_x \le 0 \quad \text{(Area of ​​the back hemisphere)} 
+\end{cases}$$
+
+Where $\sigma_y = \sigma_{side}$ is always constant for both the left and right sides ($\pm y_{\text{local}}$), the widest intersection point of the $y$ axis passes exactly through the center of the human body, without any centroid shift.
 
 <!-- ## 5. Environment Setup -->
 
