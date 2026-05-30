@@ -236,14 +236,14 @@ In effect the controller is *cruise at 1.5 m/s along the band direction, with th
 ### Perception
 
 **Goal of this experiment.**
-This experiment isolates the **pure perception stack** — YOLOv8 detection + LiDAR depth refinement + per-person tracker — and measures whether the *upstream* signal that the downstream social costmap depends on is actually reliable. The egg-shaped Gaussian and the costmap fusion are explicitly **not** exercised here; they are evaluated as part of the integrated system in §7. Two questions drive the design:
+The perception module feeds the planner *one* signal: an asymmetric Gaussian ("egg") painted onto the local costmap at the estimated position of each human, oriented along the estimated velocity. Before we can trust that signal to deform the elastic band, we have to characterise it on its own. Two questions drive the design:
 
-1. **Availability** — at a given range and motion, what fraction of cycles produces *any* detection? An undetected human leaves the downstream planner blind.
-2. **Accuracy** — when a detection exists, how far is it from the true human pose? A detection that sits 1 m off the human will, downstream, paint a Gaussian on the wrong cells, so an upper-bound on detection error directly upper-bounds how safe the egg can ever be.
+1. **Availability** — at a given range and motion, what fraction of cycles produces *any* detection? An undetected human leaves the planner blind.
+2. **Accuracy** — when a detection exists, how far is it from the true human pose? An egg that sits 1 m off the human is worse than no egg, because the planner is now confident about the wrong cell.
 
 To isolate these from the planner and from the robot's own motion, the **robot is stationary** throughout. A single human is spawned at a controlled range, swept over **{1, 3, 5, 7, 9} m**, and two motion conditions are tested at each range:
 
-1. **Case A — Standing human in front of the robot.** The human stands still directly in front of the robot. This isolates the *position* pipeline (YOLO box → monocular height depth → LiDAR refinement → world projection) from any motion. We expect a stationary detected position and a near-zero fitted speed; any non-zero speed here is the static-noise floor of the velocity estimator.
+1. **Case A — Standing human in front of the robot.** The human stands still directly in front of the robot. This isolates the *position* pipeline (YOLO box → monocular height depth → LiDAR refinement → world projection) from any motion. We expect a stationary detected position and a near-zero fitted speed; any non-zero speed here is the static-noise floor that the social costmap will paint as a (small) directional egg even when no one is moving.
 2. **Case B — Human walking laterally across the robot's FOV.** A simulated pedestrian walks at ~1.0 m/s perpendicular to the robot's heading at the chosen range. This stresses the *velocity* pipeline (OLS line fit over the trajectory buffer, latency compensation, ID stability) and reveals how often the human falls outside the 60° horizontal FOV during the run.
 
 <div align="center">
@@ -252,7 +252,7 @@ To isolate these from the planner and from the robot's own motion, the **robot i
 </div>
 
 **Setup configuration.**
-Only the YOLO detector, LiDAR depth refinement and per-person tracker are active. The egg / Gaussian-painting parameters (σ<sub>front</sub>, σ<sub>back</sub>, σ<sub>side</sub>, C<sub>peak</sub>, k<sub>v</sub>) are **not used** in this experiment — they belong to the social-costmap fusion step that runs downstream in the integrated system (their values are documented in [§7 — Egg parameters in use](#dynamic-obstacle-integrated-system)).
+Both cases share the same sensing and tracking configuration, which is what gets shipped to the integrated system in Section 7:
 
 | Group | Parameter | Value | Meaning |
 |---|---|---|---|
@@ -269,13 +269,18 @@ Only the YOLO detector, LiDAR depth refinement and per-person tracker are active
 | Tracker | history window | 1.5 s | Buffer used for the OLS velocity fit |
 | Tracker | min fit points | 5 | Below this the track keeps `v = 0` |
 | Tracker | min fit displacement | 0.20 m | First → last sample must travel this much |
-| Tracker | min reported speed | 0.15 m/s | Below this `yaw` is frozen |
+| Tracker | min reported speed | 0.15 m/s | Below this `yaw` is frozen, egg stays oriented |
 | Tracker | match radius | 1.5 m | World-frame distance for ID association |
 | Tracker | coast timeout | 0.8 s | Track survives this long without a fresh detection |
 | Tracker | EMA α (pos / vel) | 0.5 / 0.5 | Light smoothing on raw position and fitted velocity |
+| Egg | σ<sub>min</sub> (front) | 1.2 m | Idle forward lobe of a stationary human |
+| Egg | k<sub>v</sub> (velocity factor) | 0.6 s | Forward lobe grows by `k_v·\|v\|` |
+| Egg | σ<sub>back</sub> | 0.4 m | Rear lobe (always short) |
+| Egg | σ<sub>side</sub> | 0.5 m | Lateral half-width |
+| Egg | C<sub>peak</sub> | 85 (cost) | Peak cost written into the costmap |
 
 **Logging.**
-The detector and tracker run inside `social_costmap_node` (the same node that *would* paint the egg in the integrated system), but for this experiment the costmap fusion is a no-op — we only read out the detection layer. One row per detection cycle is written to `~/robot_logs/perception_log_<world>_<stamp>.csv` with `(time_s, gt_id, gt_x, gt_y, gt_speed_mps, det_id, det_x, det_y, pos_error_m, det_speed_mps, n_gt, n_detected)`. The ground-truth pose comes from the simulator's `/human_gt_poses` topic, and detection-to-GT pairing inside the logger uses ascending-distance greedy matching so the same person is not double-counted. Each `(case, range)` combination is run for ~20 s, and the longest run per range is kept for analysis. The CSVs are then post-processed by [`analyze_perception_viz.py`](src/) to produce the figures in §7.
+While each run is active, `social_costmap_node` writes one row per detection cycle to `~/robot_logs/perception_log_<world>_<stamp>.csv` with `(time_s, gt_id, gt_x, gt_y, gt_speed_mps, det_id, det_x, det_y, pos_error_m, det_speed_mps, n_gt, n_detected)`. The ground-truth pose comes from the simulator's `/human_gt_poses` topic, and detection-to-GT pairing inside the logger uses ascending-distance greedy matching so the same person is not double-counted. Each `(case, range)` combination is run for ~20 s, and the longest run per range is kept for analysis. The CSVs are then post-processed by [`analyze_perception_viz.py`](src/) to produce the figures in §7.
 
 
 ### Planner and Integration
@@ -299,7 +304,7 @@ We use three scenarios to test the planner: a **Static Obstacle** world for the 
 ### Perception
 
 **Headline numbers.**
-The two figures below summarise the entire perception sweep. Each subplot is one range; the green triangle / line is the simulator's ground truth, the red dots are the per-frame detected positions (latency-compensated to the current time, exactly what the integrated system *would* feed into the social costmap), and the diamond in Case A is the mean detected position. The blue cone is the camera's 60° horizontal FOV. The numbers in the top-left of each subplot are the detection rate (fraction of cycles in which the human was matched to a track) and the mean position error in metres.
+The two figures below summarise the entire perception sweep. Each subplot is one range; the green triangle / line is the simulator's ground truth, the red dots are the per-frame detected positions (latency-compensated to the current time, exactly as fed into the costmap), and the diamond in Case A is the mean detected position. The blue cone is the camera's 60° horizontal FOV. The numbers in the top-left of each subplot are the detection rate (fraction of cycles in which the human was matched to a track) and the mean position error in metres.
 
 <div align="center">
   <img src="./figures/perception_stand.png" alt="Case A — standing human, GT vs detected position" width="900">
@@ -345,7 +350,7 @@ The two figures below summarise the entire perception sweep. Each subplot is one
 **Result analysis.**
 
 *Case A — standing human.*
-- **3 m to 7 m is the sweet spot.** Detection rate is 100 % and the mean position error is essentially flat at ~0.31 m. The error is **systematic, not random**: in every subplot the red cluster sits at the same offset from the green triangle, roughly along the line of sight. This is the residual of the camera-to-`base_link` calibration (the 0.40 m forward offset plus the small ground-plane assumption made in `_pixel_range_to_world`); it is *not* noise. For the downstream egg this is harmless — when the integrated system later paints a Gaussian at the detected position, the lethal cells still sit well inside the human's footprint despite the 0.3 m bias.
+- **3 m to 7 m is the sweet spot.** Detection rate is 100 % and the mean position error is essentially flat at ~0.31 m. The error is **systematic, not random**: in every subplot the red cluster sits at the same offset from the green triangle, roughly along the line of sight. This is the residual of the camera-to-`base_link` calibration (the 0.40 m forward offset plus the small ground-plane assumption made in `_pixel_range_to_world`); it is *not* noise. From the planner's point of view this is harmless — the egg is anchored 0.3 m past the human along the bearing, which still puts the lethal cells well inside the human's footprint.
 - **At 1 m the detection rate collapses to 39 %.** This is the failure mode we already flagged in §8 of the discussion: at very close range the human's torso and head leave the camera's *vertical* FOV (camera is mounted at ~1.0 m above ground) and YOLO sees only the legs, which no longer match the "person" template at confidence ≥ 0.5. Note the position error is still 0.32 m — when a detection survives, it is just as accurate as the farther ranges. The problem is purely *availability*, not accuracy.
 - **At 9 m there is no detection at all.** The human's bounding box becomes too small for YOLOv8n to score above the 0.5 confidence threshold, and our hard `detection_range = 8 m` cap also kicks in. This bounds the useful operating range of the social costmap to ~7 m, which is consistent with the lookahead distances actually used by the planner (`L ≤ 10 m`, but only the nearest few metres matter for the immediate egg overlay).
 
@@ -520,19 +525,19 @@ In the free-environment runs it is clear that the robot trajectory depends stron
 
 This is the full pipeline: the GMM perception module from §4 is now driving the EB planner from §3 through the shared `/local_costmap_social` topic. The planner-only runs above used only the LiDAR layer (`cost_map_topic: /local_costmap`); the integrated runs flip the parameter to `/local_costmap_social`, which is the same grid with the egg-shaped Gaussians fused in. Nothing else in the planner changes.
 
-##### Mixed scenario — static obstacles + two cross-opposite pedestrians
+##### Mixed scenario — static obstacles + one head-on pedestrian
 
-Before we run the dynamic-only worlds (C and D), the integrated system is sanity-checked on a *mixed* scenario that combines **both** obstacle types from §6 in a single map: **3 static blocks** (the geometry from scenario B) **and 2 pedestrians walking in opposite directions** (the motion pattern from scenario C). This is the only scenario in this section that simultaneously stresses (a) the MCCH polygon extraction (the static blocks are unseen by perception and have to be discovered through the LiDAR costmap) and (b) the GMM social channel (both pedestrians have to be detected, tracked, and projected ahead). All other parameters — start, goal, lookahead `L = 5 m`, costmap topic, robot/human velocities — are the same as the §6 setup for scenarios B and C.
+Before we run the dynamic-only worlds (C and D), the integrated system is sanity-checked on a *mixed* scenario that combines both obstacle types in a single map. This is the only scenario in this section that simultaneously stresses (a) the MCCH polygon extraction (the three black blocks are unseen by perception and have to be discovered through the LiDAR costmap), and (b) the GMM social channel (the head-on pedestrian on the right has to be detected, tracked, and projected ahead).
 
 <div align="center">
-  <img src="./figures/map_integrate.png" alt="Mixed-scenario map — three static blocks plus two cross-opposite pedestrians" width="650">
-  <p><em><b>Figure I-M — Mixed scenario map.</b> <b>Red triangle (left):</b> robot at its start pose, facing +x along the dashed grey straight-line global path toward the goal. <b>Yellow star (right):</b> goal pose. <b>Two green triangles with arrows:</b> the two pedestrians and their walking directions — one moving in the same direction as the robot (lower-left, +x) and one moving head-on toward the robot (upper-right, −x), i.e. the cross-opposite motion pattern from scenario C. <b>Three black squares:</b> static obstacles arranged to block the straight-line path, the geometry from scenario B. The integrated stack must therefore handle the MCCH-extracted block polygons and the GMM-painted pedestrian eggs in the same costmap.</em></p>
+  <img src="./figures/map_integrate.png" alt="Mixed-scenario map — three static blocks and one head-on pedestrian" width="650">
+  <p><em><b>Figure I-M — Mixed scenario map.</b> Green-with-arrow on the left = robot at its start pose facing +x. Yellow star on the right = goal pose. Red triangle = the position the robot would reach if it followed the straight-line global path (dashed grey). Green-with-arrow on the right = a pedestrian walking toward the robot (−x). Three black squares are static obstacles placed to force the band to deform around them while the pedestrian closes from the front.</em></p>
 </div>
 
 <table>
   <tr>
     <td>
-      <video src="./videos/integration/integrate_map.webm" width="100%" controls></video>
+      <p align="center"><a href="https://drive.google.com/file/d/1f4fUJvA3Oy3uN8YUw3PRORjGWu5zWfOG/view?usp=sharing"><b>Click to watch video (Google Drive)</b></a></p>
       <p align="center">Mixed scenario (Figure I-M) — integrated GMM + EB at L = 5 m. The band deforms around the static blocks (MCCH) while the egg-shaped social cost of the oncoming pedestrian pushes the robot off the straight-line homotopy class early.</p>
     </td>
   </tr>
@@ -580,22 +585,21 @@ detection_range = 8.0           # m hard cap
 
 At a 1.2 m/s human, `σ_front = 1.2 + 0.6·1.2 = 1.92 m` — i.e. the lethal forward lobe of each egg is ~2 m long. That length, plus the rounded sides, is what makes the difference visible in the path-length numbers below.
 
-##### Result recordings
+##### Result plots
 
-Because of an Ignition screen-capture issue some of the in-simulator videos for these L = 5 m runs had to be re-recorded; the two below are the working captures. Quantitative path / min-distance numbers come from the CSV logs (`path_planning_node` for robot pose, SDF actor waypoints for human GT — see [`analyze_integration.py`](analyze_integration.py)) and are reported together in *Figure GMM* and the result-numbers table below.
+Because of an Ignition screen-capture issue the in-simulator videos for these L = 5 m runs were unusable. We instead reconstruct each run from the logs and plot it offline: the robot trajectory comes from `path_planning_node`'s CSV (`time_s, x, y, yaw, vx, vy, ω, …`), and the human ground-truth trajectory is interpolated from the SDF actor waypoints against the run's sim time (Ignition Fortress does not publish actor poses on `/pose/info`, so the SDF is the source of truth — see the project memory). The reconstruction is reproducible: see [`analyze_integration.py`](analyze_integration.py).
 
-<table>
-  <tr>
-    <td width="50%">
-      <video src="./videos/integration/world3_integration.webm" width="100%" controls></video>
-      <p align="center"><em><b>World C — Cross Opposite, L = 5 m.</b> Integrated GMM + EB. Egg-shaped social zones are rendered around each detected human in real time as the robot reacts to H1.</em></p>
-    </td>
-    <td width="50%">
-      <video src="./videos/integration/world4_integration.webm" width="100%" controls></video>
-      <p align="center"><em><b>World D — Cross Same Direction, L = 5 m.</b> Integrated GMM + EB. Both humans share the same heading; the two forward lobes merge into a single cost ridge that the band rounds in one sideways step.</em></p>
-    </td>
-  </tr>
-</table>
+<div align="center">
+  <img src="./figures/integration_world3.png" alt="World C — robot vs human GT trajectories" width="700">
+  <p><em><b>Figure I-C — World C (Cross Opposite, L = 5 m).</b> Solid blue = baseline robot path (LiDAR-only costmap); dashed red = integrated path (LiDAR + GMM). Dotted grey lines are the two humans' full GT trajectories during the run; large grey circles outlined in blue/red mark each human's <b>position at the moment of closest approach</b> in the respective run, and the small boxed number on the connecting line is that closest-approach distance in metres. Numbers in the bottom-left summarise final path length and minimum robot-human distance per run.</em></p>
+  <p><a href="https://drive.google.com/file/d/1LFt5x1_SnzOqKb-5BmGkbr29_Vwer_SZ/view?usp=sharing"><b>Click to watch the in-simulator recording (Google Drive)</b></a></p>
+</div>
+
+<div align="center">
+  <img src="./figures/integration_world4.png" alt="World D — robot vs human GT trajectories" width="700">
+  <p><em><b>Figure I-D — World D (Cross Same Direction, L = 5 m).</b> Same layout as Figure I-C. Both humans walk in the same direction, so their forward lobes merge into a single cost ridge — visible as a single positive-y swerve in both the baseline and integrated paths.</em></p>
+  <p><a href="https://drive.google.com/file/d/1JOxNYZfcf0W5iiaS-DpbTLDISs_LGdpy/view?usp=sharing"><b>Click to watch the in-simulator recording (Google Drive)</b></a></p>
+</div>
 
 ##### Result numbers
 
@@ -615,30 +619,12 @@ All values measured directly from the CSV logs (robot path from `path_planning_n
 
 ##### Result analysis
 
-**Headline finding — both Worlds C and D expose the *same* failure mode: the GMM channel cannot maintain a detection on a human at near-robot range, so the planner loses obstacle information exactly during the close-approach phase and the local planner has no costmap to avoid against.** Even though the egg shortens the path in both runs (−1.06 m in C, −1.17 m in D, see the result-numbers table and Figure GMM), the avoidance itself is not robust: W3 grazes H1 at 0.46 m (clear collision), and W4 only clears at 1.07 m because of favourable timing geometry in this particular run — the *underlying* perception blackout is the same in both, and a small shift in human-vs-robot timing would flip W4's outcome. The collision in W3 is therefore not specific to W3; it is the first manifestation of a general failure that recurs whenever the robot has to pass within ~1.5 m of a pedestrian.
-
-**Why the GMM channel goes dark at close range.** Three factors compound at the exact instant the planner needs the social costmap most (the same three causes from §8 Discussion, summarised here so the result analysis is self-contained):
-
-1. **Robot height — low camera loses the human.** The front camera is mounted at ~1.0 m above the ground. At 1–2 m range the human's torso and face leave the camera's *vertical* FOV and only the legs remain in frame, so YOLO drops the detection (the bounding box no longer matches the "person" template). This is quantified by the Perception sweep in §7: **detection rate falls to 39 % at 1 m range** (Figure P3, left panel), and the social costmap vanishes the moment the avoidance manoeuvre brings the robot into that range. The reference CPTEB paper uses a taller service-robot platform (~1.4–1.6 m camera) that keeps the torso visible at close range.
-2. **Limited FOV — the human exits the view.** The 60° horizontal cone only sees humans within ±30° of the robot's heading. During avoidance the controller's goal-pointing yaw P-servo (see [Robot motion controller](#robot-motion-controller)) keeps rotating the chassis back toward the goal, so the human slides out of the FOV side just as the robot is trying to pass them. Detection is lost precisely when the planner needs it most.
-3. **Situation mismatch — open space vs. corridor.** The reference paper operates in narrow hotel corridors (~2 m wide), where the walls constrain both robot and human to stay within each other's FOV even during sideways motion. Our wide open environments let the elastic band swing the robot several metres laterally; the human exits the FOV completely, the social costmap disappears, and the planner either overcorrects or collides. *Narrow space, counter-intuitively, is an advantage for this perception setup.*
-
-> **Root cause.** The three factors compound at the same moment — robot close to the human, turning away from it, in open space — creating a *detection blackout* exactly when the social costmap is needed most.
-
-<table align="center">
-  <tr>
-    <td align="center" width="55%">
-      <img src="./figures/cam_view_1m.png" alt="Front camera at 1 m range — only legs visible" width="100%">
-    </td>
-    <td valign="middle" width="45%">
-      <em><b>Figure I-Cam — what the camera sees at 1 m range.</b> Same camera configuration as the Perception sweep in §7 (Figure P3, leftmost panel). When the avoidance manoeuvre brings the robot inside ~1.5 m of a pedestrian, this is the input YOLO has to score: head and torso are above the vertical FOV, only legs and feet are in frame. Detection rate in this regime is <b>39 %</b> — the integrated W3 / W4 runs inherit exactly this blackout, which is why the local planner has no costmap to deform against during the critical final ~1 s of the encounter.</em>
-    </td>
-  </tr>
-</table>
-
-**Quantitative cross-link to the controller.** At `v_max = 1.5 m/s` and the 0.46 m W3 clearance the robot has ≈ 0.3 s of separation from H1 — and the controller has **no obstacle-proximity slow-down** (only the final-approach 1.5 m goal ramp, see [Robot motion controller](#robot-motion-controller)). So even if YOLO did produce a detection at that instant, the controller would not have the kinematic margin to deform the band and brake. The stack is missing both a *perception layer that survives close range* and a *velocity layer that scales with proximity*.
-
-**Take-away.** The directional Gaussian is doing the right local thing whenever the human is *in view* — the path savings in both worlds (−1.06 m, −1.17 m) confirm the planner-side mechanism. But neither the egg nor the band optimiser can compensate for a perception channel that blanks out at the critical instant. Closing this gap requires (a) a controller layer that decelerates when the egg comes within stopping distance, and (b) a perception geometry (taller camera, wider FOV, or corridor-style environment) that keeps the human in view through the avoidance manoeuvre. Both are discussed further in §8.
+- **The egg shortens the path in both worlds (−1.06 m in World C, −1.17 m in World D).** Mechanism: the directional Gaussian is painted *before* the human is at the robot's level, so the band starts deforming several seconds early and commits to a single short sideways step rather than the late wide swerve the LiDAR-only baseline is forced into. In Figure I-D the same-direction humans' forward lobes merge into a single cost ridge, so the band rounds one obstacle instead of two and the saving is slightly larger.
+- **World C — the egg *causes* the grazing collision it was meant to prevent.** This is the most important finding from the plots. The baseline run (blue, 17.05 m) over-corrects to +y ≈ +2.5 m and clears H1 by 1.08 m. The integrated run (red, 15.99 m) commits to a tighter detour through y ≈ −1.7 m and arrives at x = +2 (H1's lane) at almost the same instant H1 is crossing y ≈ 0 northward — **min distance 0.46 m**, well below the 0.5 m threshold. The egg's job (deform earlier, take a shorter path) succeeded; the shorter path put the robot on a collision course because the speed and avoidance side were not co-optimised against the human's predicted future position.
+- **World D — the egg works as intended.** Both runs clear (baseline 1.54 m, integrated 1.07 m). The integrated path is shorter *and* safer-in-spirit (commits to the same homotopy class earlier, no late panic swerve). The min-distance is lower than baseline only because the integrated path is geometrically tighter — but still well above 0.5 m.
+- **Why World C and not World D — relative velocity.** World C is a head-on encounter, closing rate ≈ 2.7 m/s along the lateral axis; H1 transits the robot's path in ≈ 1.5 s. The egg's forward lobe (`σ_front = 1.92 m` at 1.2 m/s) is consumed in roughly that same time, so any latency in the perception pipeline (~0.3 s detection + up to 0.8 s coast on a miss) eats more than half the planning margin. In World D the parallel humans give a relative speed of ≈ 1.9 m/s and an interaction window twice as long, leaving plenty of slack for the egg + band to converge.
+- **Cross-link to §6 controller.** The planner emits the band-tangent at `v_max = 1.5 m/s` cruise with **no obstacle-proximity slow-down** (only a 1 : 1 ramp inside the final 1.5 m to goal — see the [Robot motion controller](#robot-motion-controller) table). At 1.5 m/s, 0.46 m of clearance corresponds to ≈ 0.3 s of separation — there is no controller-side brake to add a safety margin when the egg appears at short range. This is a key architectural limitation of the current stack, not a tuning issue with the egg.
+- **Take-away.** The integrated system **shortens both paths** and **fixes the World D run**, but **introduces a new collision in World C** that the LiDAR-only baseline did not have. The directional Gaussian is doing the right local thing — it just needs (a) a controller layer that decelerates when the egg comes within stopping distance, and (b) a perception geometry that does not blink out during the close-range avoidance manoeuvre. Both are discussed in §8.
 
 
 
